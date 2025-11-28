@@ -1,0 +1,52 @@
+/*
+1. Activar carga:
+   {"Funcion": "Other", "Config": {"Resolution": [], "Range": []}, "Start": "CFG_ON"}
+
+2. Desactivar carga:
+   {"Funcion": "Other", "Config": {"Resolution": [], "Range": []}, "Start": "CFG_OFF"}
+
+3. Configurar modo dinámico:
+   {"Funcion": "DYN", "Config": {"Resolution": [3, 1, 3, 1], "Range": [50, 30]}, "Start": "CFG_ON"}
+   
+4. Configurar modo list:
+   {"Funcion": "LIST", "Config": {"Resolution": [10, 0.2, 0.5, "STEP1"], "Range": [50, 30]}, "Start": "CFG_ON"}
+   
+ 5. Iniciar lectura:
+   {"Funcion": "Other", "Config": {"Resolution": [], "Range": []}, "Start": "Read"}
+   
+6. Reset del sistema:
+   {"Funcion": "RST", "Config": {"Resolution": [], "Range": []}, "Start": "CFG_ON"}
+   
+7. Configurar idioma inglés:
+   {"Funcion": "LANG", "Config": {"Resolution": [], "Range": []}, "Start": "CFG_ON"}
+
+
+
+// JSON para pruebas TEST Monitor Serie
+
+{"Function":"Cortocircuito"}
+
+{"Function":"Polaridad"}
+
+{"Function":"Lectura Nom"}
+
+{"Function":"Lectura Break"}
+
+
+// JSON Data Base
+
+
+// JSON SetNewTest
+{
+  "id_proyecto": 84,
+  "id_mac": "",
+  "uid": "",
+  "id_numero_serie": "",
+  "id_tecnico": 0,
+  "comentarios_generales": "string"
+}
+
+*/
+
+
+

@@ -1,0 +1,212 @@
+import json
+import time
+import sys
+import select
+from machine import UART, Pin
+from max1704x import max1704x
+
+# Pines y UART
+status_led = Pin(18, Pin.OUT)
+button = Pin(9, Pin.IN, Pin.PULL_UP)
+uart = UART(1, baudrate=9600, tx=Pin(1), rx=Pin(0))
+sensor_detected = False
+last_state = None
+ejecutando = False
+
+# Web Serial (USB)
+poller = select.poll()
+poller.register(sys.stdin, select.POLLIN)
+
+def get_timestamp():
+    t = time.localtime()
+    return f"{t[0]:04}-{t[1]:02}-{t[2]:02} {t[3]:02}:{t[4]:02}:{t[5]:02}"
+
+def create_status(command, msg, arg1=None, arg2=None, arg3=None):
+    global last_state
+    status = {
+        "command": command,
+        "msg": msg,
+        "arg1": arg1,
+        "arg2": arg2,
+        "arg3": arg3,
+        "timestamp": get_timestamp()
+    }
+    if status != last_state:
+        print(json.dumps(status))
+        last_state = status
+
+def create_event(evento, estado):
+    print(json.dumps({
+        "evento": evento,
+        "estado": estado,
+        "timestamp": get_timestamp()
+    }))
+
+def create_error(msg, details=None):
+    print(json.dumps({
+        "command": "Error",
+        "msg": msg,
+        "details": details,
+        "timestamp": get_timestamp()
+    }))
+
+def config_load(dyn=None):
+    try:
+        uart.write("FUNC DYN\n")
+        uart.write("CURR:RANG 50\n")
+        uart.write("VOLT:RANG 3\n")
+        if dyn is None:
+            dyn = 0.2  # Valor por defecto
+        uart.write(f"DYN:ALEV {dyn:.3f}\n")
+        uart.write("DYN:AWID 1\n")
+        uart.write(f"DYN:BLEV {dyn:.3f}\n")
+        uart.write("DYN:BWID 1\n")
+        create_status("DYN", f"Configuraci\u00f3n din\u00e1mica aplicada con {dyn:.3f} A", dyn, 1, 1)
+    except Exception as e:
+        create_error("Fallo en configuraci\u00f3n UART", str(e))
+
+def start_load(command):
+    cmd_dict = {"CFG_ON": "INP 1", "CFG_OFF": "INP 0"}
+    if command in cmd_dict:
+        uart.write(cmd_dict[command] + "\n")
+        create_status(command, f"Configuration turned {command.split('_')[1]}", cmd_dict[command])
+
+def measure():
+    uart.write("MEAS:VOLT?;MEAS:CURR?;MEAS:POW?\n")
+    time.sleep(0.5)
+    try:
+        if uart.any():
+            raw = uart.read().decode().strip()
+            parts = raw.split(';')
+            valores = [float(x.strip()) for x in parts if x.strip()]
+            if len(valores) != 3:
+                raise ValueError("Expected 3 values, got: " + str(valores))
+        else:
+            raise ValueError("No UART data")
+    except Exception as e:
+        valores = [0, 0, 0]
+        print(json.dumps({
+            "command": "Error",
+            "msg": "UART measure error",
+            "details": str(e),
+            "timestamp": get_timestamp()
+        }))
+    print(json.dumps({
+        "command": "MEASURE",
+        "msg": "Measurement data received",
+        "valores": valores,
+        "timestamp": get_timestamp()
+    }))
+
+def check_i2c_bus():
+    global sensor_detected
+    try:
+        sensor = max1704x(sda_pin=6, scl_pin=7)
+        if sensor.sensor_exists():
+            sensor_detected = True
+            print(json.dumps({
+                "command": "I2C_INFO",
+                "I2C_address": sensor.address(),
+                "module_version": sensor.getVersion(),
+                "cell_voltage": sensor.getVCell(),
+                "state_of_charge": sensor.getSoc(),
+                "compensation_value": sensor.getCompensateValue(),
+                "alert_threshold": sensor.getAlertThreshold(),
+                "in_alert": sensor.inAlert(),
+                "timestamp": get_timestamp()
+            }))
+            sensor.quickStart()
+        else:
+            sensor_detected = False
+            create_status("Error", "Sensor MAX1704X not found")
+    except Exception as e:
+        sensor_detected = False
+        create_error("I2C check error", str(e))
+
+def run_measurement_only():
+    if sensor_detected:
+        measure()
+    else:
+        create_status("Alert", "Sensor not detected, skipping measurement")
+
+def run_measurement_series(n):
+    global ejecutando
+    if ejecutando:
+        return
+    ejecutando = True
+
+    check_i2c_bus()
+    if not sensor_detected:
+        create_status("Alert", "Sensor not detected, skipping measurement")
+        ejecutando = False
+        return
+
+    start_load("CFG_ON")
+    time.sleep(2)
+    for i in range(n):
+        run_measurement_only()
+        if i < n - 1:
+            time.sleep(1)
+    start_load("CFG_OFF")
+    time.sleep(0.2)
+
+    ejecutando = False
+
+def check_button():
+    if button.value() == 0:
+        create_event("boton", "presionado")
+        while button.value() == 0:
+            time.sleep(0.01)
+        create_event("boton", "liberado")
+        run_measurement_series(2)
+
+# Config inicial
+create_status("READY", "Conectado y en espera de inicio")
+
+# Bucle principal
+while True:
+    check_button()
+    try:
+        if poller.poll(0):
+            cmd = sys.stdin.readline().strip()
+
+            if cmd.startswith("START"):
+                create_event("boton", "presionado")
+                try:
+                    partes = cmd.split(":")
+                    muestras = int(partes[1]) if len(partes) > 1 else 2
+                    muestras = max(1, min(muestras, 20))
+                except:
+                    muestras = 1
+                run_measurement_series(muestras)
+
+            elif cmd == "CONFIG":
+                config_load()
+
+            elif cmd.startswith("CONFIG:DYN="):
+                try:
+                    dyn_value = float(cmd.split("=")[1])
+                    config_load(dyn_value)
+                except Exception as e:
+                    create_error("CONFIG:DYN inv\u00e1lido", str(e))
+
+            elif cmd == "STATUS":
+                create_status("STATUS", "Dispositivo operativo y en espera")
+
+            elif cmd.startswith("TIME:"):
+                segundos = cmd.split(":")[1]
+                create_status("TIME", f"Tiempo recibido: {segundos}s")
+
+            elif cmd == "STOP":
+                create_event("boton", "liberado")
+                start_load("CFG_OFF")
+                ejecutando = False
+
+            else:
+                create_error("Comando no reconocido", cmd)
+
+    except Exception as e:
+        create_error("Error leyendo comando", str(e))
+
+    time.sleep(0.1)
+

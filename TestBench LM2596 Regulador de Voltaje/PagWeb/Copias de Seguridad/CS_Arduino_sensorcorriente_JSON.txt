@@ -1,0 +1,296 @@
+// Código Final de integración entre PagWeb-Vite y Pulsar ESP32-C6
+
+// --- BIBLIOTECAS --- 
+#include <Wire.h>
+#include <Adafruit_INA219.h>
+#include <HardwareSerial.h>
+#include <ArduinoJson.h>
+
+// Pines para UART2 (puedes reasignarlos)
+#define RX2 D4    // GPIO9 como RX
+#define TX2 D5    // GPIO8 como TX
+
+// Pines para comunicación I2C con el sensor de corriente
+#define I2C_SDA 6
+#define I2C_SCL 7
+
+// Pines de botones
+#define BTN1 20 // Botón de cortocircuito
+#define BTN2 21 // Botón de polaridad
+
+// Pines de relés (activo en LOW)
+#define RELAY1 4    // Relevadores de polaridad
+#define RELAY2 22
+
+#define RELAY3 1    // Relevadores de cortocircuito
+#define RELAY4 3
+
+HardwareSerial PagWeb(1); // Crear objeto para UART2 en PULSAR como PagWeb
+TwoWire I2CBus = TwoWire(0);
+Adafruit_INA219 ina219;
+
+const float shuntOffset_mV = 0.0;  // Offset en vacío para lectura inicial
+const float R_SHUNT = 0.05;  // Resistencia Shunt = 50 mΩ
+float corrienteSensor = 0; // Variable de lectura de corriente con el sensor
+
+// Inicialización de botones
+bool estadoBtn1 = false;
+bool estadoBtn2 = false;
+
+// JSON para recibir datos
+String JSON; // Variable que recibe al JSON en crudo de PagWeb
+StaticJsonDocument<200> datosJSON;  // Usa StaticJsonDocument para fijar tamaño
+
+// JSON para enviar datos
+String medicionCorto;
+String medicionPol;
+StaticJsonDocument<200> enviarJSON;
+
+void setup() {
+
+  // Iniciar UART0 (USB) para depuración
+  Serial.begin(115200);
+  //while(!Serial) { delay(10); }  // <= agrega esto
+  Serial.println("UART0 listo (USB)");
+                      
+  // Iniciar UART2 en los pines seleccionados
+  PagWeb.begin(115200, SERIAL_8N1, RX2, TX2);
+  Serial.println("UART2 iniciado en RX=9, TX=8");
+
+  // Iniciar comunicación I2C
+  I2CBus.begin(I2C_SDA, I2C_SCL);
+
+  if (!ina219.begin(&I2CBus)) {
+    Serial.println("No se encontró el chip INA219");
+    while (1) { delay(10); }
+  }
+
+  // Configurar botones con resistencia pull-up interna
+  pinMode(BTN1, INPUT_PULLUP); // Cortocircuito
+  pinMode(BTN2, INPUT_PULLUP);
+
+  // Configurar pines de relés como salida
+  pinMode(RELAY1, OUTPUT);
+  pinMode(RELAY2, OUTPUT);
+  pinMode(RELAY3, OUTPUT);
+  pinMode(RELAY4, OUTPUT);
+
+  // Apagar todos los relés al inicio (HIGH = apagado)
+  digitalWrite(RELAY1, HIGH);
+  digitalWrite(RELAY2, HIGH);
+  digitalWrite(RELAY3, HIGH);
+  digitalWrite(RELAY4, HIGH);
+
+  Serial.println("Midiendo voltaje y corriente con el INA219 ...");
+}
+
+
+
+void loop() {
+
+
+  if (PagWeb.available() || digitalRead(BTN1) == LOW  || digitalRead(BTN2) == LOW){
+
+    //  Accionamiento desde PagWeb
+    if (PagWeb.available() && digitalRead(BTN1) == HIGH && digitalRead(BTN2) == HIGH){
+
+      JSON = PagWeb.readStringUntil('\n');  // Leer hasta newline (JSON en crudo)
+
+      // Deserializa el JSON y guarda la información en datosJSON 
+      DeserializationError error = deserializeJson(datosJSON, JSON); 
+
+      //char dato = PagWeb.read(); // Caracter de entrada para seleccionar prueba
+
+      if (!error) { // Si no hay error de comunicación, EJECUTA
+        String Function = datosJSON["Function"]; // Function es la variable de interés del JSON
+        Serial.println("JSON: " + Function + " Datos: " + JSON);
+        
+        int opc = 0; // Variable de switcheo
+
+        if (Function == "Cortocircuito")        opc = 1;
+        else if (Function == "Polaridad")       opc = 2;
+
+
+
+        switch (opc){
+          
+          case 1:
+            Serial.println("Ejecución de prueba de Cortocircuito"); 
+            enviarJSON.clear();   // Limpia cualquier dato previo
+            enviarJSON["Led1"] = "waiting"; // Estado de espera LED1
+            serializeJson(enviarJSON, PagWeb); // Envío de datos por JSON a la PagWeb
+            PagWeb.println();   // Salto de línea para delimitar
+
+            //PagWeb.write("2"); // Caracter para indicador amarillo en PagWeb
+            delay(2000); // Tiempo de espera para mostrar el amarillo
+
+            // Accionamiento de relevadores
+            digitalWrite(RELAY1, LOW);    // Activo
+            digitalWrite(RELAY2, LOW);    // Activo
+            
+            delay(5); // Tiempo de anti rebote RECOMENDABLE 6
+            corrienteSensor = medirCorriente();
+
+            digitalWrite(RELAY1, HIGH);    // Apagado
+            digitalWrite(RELAY2, HIGH);    // Apagado
+            delay(25);
+
+            Serial.print("Corriente en Corto: ");
+            Serial.print(corrienteSensor, 3);
+            Serial.println(" A");
+
+            enviarJSON["Led1"] = "on"; // Estado aprobado LED1
+            medicionCorto = String(corrienteSensor, 3) + " A"; // Empaquetamiento
+            enviarJSON["LecturaCorto"] = medicionCorto; // Envio de corriente JSON para corto
+            serializeJson(enviarJSON, PagWeb); // Envío de datos por JSON a la PagWeb
+            PagWeb.println();   // Salto de línea para delimitar
+
+            //PagWeb.write("1"); // Caracter para indicador verde en PagWeb
+            //delay(1000);
+            //PagWeb.write("0"); // Caracter para indicador rojo en PagWeb
+            Serial.println("Fin de la prueba");
+            break; 
+
+          case 2:
+            Serial.println("Ejecución de prueba de Polaridad");   
+            enviarJSON.clear();   // Limpia cualquier dato previo
+            enviarJSON["Led2"] = "waiting"; // Estado aprobado LED2
+            serializeJson(enviarJSON, PagWeb); // Envío de datos por JSON a la PagWeb
+            PagWeb.println();   // Salto de línea para delimitar
+
+            delay(2000); // Tiempo de espera para mostrar el amarillo
+
+            // Accionamiento de relevadores
+            digitalWrite(RELAY3, LOW);    // Activo
+            digitalWrite(RELAY4, LOW);    // Activo
+
+            delay(25); // Tiempo de anti rebote
+            corrienteSensor = medirCorriente();
+
+            digitalWrite(RELAY3, HIGH);    // Apagado
+            digitalWrite(RELAY4, HIGH);    // Apagado
+            delay(25);
+
+            Serial.print("Corriente en inv de Polaridad: ");
+            Serial.print(corrienteSensor, 3);
+            Serial.println(" A");
+
+            medicionPol = String(corrienteSensor, 3) + " A"; // Empaquetamiento
+            enviarJSON["LecturaPolaridad"] = medicionPol; // Envio de corriente JSON para polaridad
+            enviarJSON["Led2"] = "on"; // Estado aprobado LED2
+            serializeJson(enviarJSON, PagWeb); // Envío de datos por JSON a la PagWeb
+            PagWeb.println();   // Salto de línea para delimitar
+
+            Serial.println("Fin de la prueba");
+            break; 
+        }
+      } 
+
+      else {
+        Serial.print("Error de JSON: ");
+        Serial.println(error.c_str());
+      }
+
+    }
+
+    // Accionamiento por botón de Cortocircuito
+    else if(digitalRead(BTN1) == LOW && digitalRead(BTN2) == HIGH){
+
+        Serial.println("Ejecución de prueba de Cortocircuito Manual"); 
+
+        // Accionamiento de relevadores
+        digitalWrite(RELAY1, LOW);    // Activo
+        digitalWrite(RELAY2, LOW);    // Activo
+        
+        delay(5); // Tiempo de anti rebote
+        corrienteSensor = medirCorriente();
+
+        digitalWrite(RELAY1, HIGH);    // Apagado
+        digitalWrite(RELAY2, HIGH);    // Apagado
+        delay(25);
+
+        PagWeb.write("2"); // Caracter para indicador amarillo en PagWeb
+        delay(2000); // Tiempo de espera para mostrar el amarillo
+
+        Serial.print("Corriente en Corto: ");
+        Serial.print(corrienteSensor, 3);
+        Serial.println(" A");
+
+        PagWeb.write("1"); // Caracter para indicador verde en PagWeb
+        delay(1000);
+        PagWeb.write("0"); // Caracter para indicador rojo en PagWeb
+        Serial.println("Fin de la prueba");
+    }
+
+    // Accionamiento por botón de Polaridad
+    else if(digitalRead(BTN2) == LOW && digitalRead(BTN1) == HIGH){
+
+        Serial.println("Ejecución de prueba de Polaridad Manual"); 
+
+        // Accionamiento de relevadores
+        digitalWrite(RELAY3, LOW);    // Activo
+        digitalWrite(RELAY4, LOW);    // Activo
+
+        delay(25); // Tiempo de anti rebote
+        corrienteSensor = medirCorriente();
+
+        digitalWrite(RELAY3, HIGH);    // Apagado
+        digitalWrite(RELAY4, HIGH);    // Apagado
+        delay(25);
+
+        PagWeb.write("5"); // Caracter para indicador amarillo en PagWeb
+        delay(2000); // Tiempo de espera para mostrar el amarillo
+
+        Serial.print("Corriente en Corto: ");
+        Serial.print(corrienteSensor, 3);
+        Serial.println(" A");
+
+        PagWeb.write("4"); // Caracter para indicador verde en PagWeb
+        delay(1000);
+        PagWeb.write("3"); // Caracter para indicador rojo en PagWeb 
+        Serial.println("Fin de la prueba");
+    }
+
+    // Falso contacto
+    else{
+        digitalWrite(RELAY1, HIGH);    // Apagado
+        digitalWrite(RELAY2, HIGH);    // Apagado
+        digitalWrite(RELAY3, HIGH);    // Apagado
+        digitalWrite(RELAY4, HIGH);    // Apagado
+    }
+
+
+
+  }
+
+  /* 
+  static unsigned long t0 = 0;
+  if (millis() - t0 > 2000) {
+    Serial.println("Loop corriendo, esperando JSON o botones...");
+    t0 = millis();
+  }
+  */
+
+} // void loop()
+                                                                                                                                    
+
+// ## DECLARACIÓN DE FUNCIONES ##
+
+// ==== Medición INA219 ====
+float medirCorriente(){
+
+  float shunt_mV = ina219.getShuntVoltage_mV();
+  float bus_V = ina219.getBusVoltage_V();
+
+  shunt_mV -= shuntOffset_mV;  
+  float shunt_V = shunt_mV / 1000.0;
+  float current_A = shunt_V / R_SHUNT; // Corriente de interés
+  float load_V = bus_V + shunt_V;
+  float power_W = load_V * current_A;
+
+  return current_A;
+}
+
+
+
+

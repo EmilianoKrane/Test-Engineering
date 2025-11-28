@@ -1,0 +1,490 @@
+/* Mejoras a implementar:
+
+ 1. La casilla de datos debe estar seleccionada o el 
+ escáner no entregará la información del DMatrix.
+*/
+
+
+
+import React, { useState, useEffect, useRef } from "react";
+
+
+
+export default function Content() {
+
+  // Estados para los LEDs
+  const [stateLED1, setLED1On] = useState("off");
+  const [stateLED2, setLED2On] = useState("off");
+
+  // Estado para mostrar información recibida del JSON
+  const [JSONCorto, setJSONCorto] = useState<string>("");
+  const [JSONPolaridad, setJSONPolaridad] = useState<string>("");
+
+  // Estado para el contenido de la caja de texto
+  const [messages, setMessages] = useState<string>("");
+
+  // Referencia al input 
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Estado para la comunicación serie por puerto
+  const [port, setPort] = useState<SerialPort | null>(null);
+
+  // Estado para el aviso de finalizado
+  const [showMessage, setShowMessage] = useState(false);
+
+  useEffect(() => {
+  if (stateLED1 == "on" && stateLED2 == "on") {
+    setShowMessage(true);   // Mostrar el aviso
+  }
+}, [stateLED1, stateLED2]);
+
+
+
+  // Cuando el componente carga, ponemos el foco en el input
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  // Manejar cuando el GM65 “escribe” algo
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setMessages(e.target.value); // copiar lo que se escribió al input
+  };
+
+  // Manejar cuando el GM65 manda "Enter" después del código
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      console.log("Código leído:", e.currentTarget.value);
+
+        // Mostrar en el input y limpiar valor
+        //e.currentTarget.value = "";
+        setMessages(e.currentTarget.value);
+
+        // Esperar 3 segundos antes de borrar el input
+        setTimeout(() => {
+          setMessages(""); 
+        }, 10000); // 10000ms = 10 segundos
+
+    }
+  };
+
+
+    const getColor1 = () => {
+      switch (stateLED1) {
+        case "on":
+          return "limegreen"; // Enciende con 1
+        case "waiting":
+          return "yellow";    // Enciende con 2
+        case "off":
+        default:
+          return "#f73d18ff"; // Enciende con 0
+      }
+    };
+
+    const getColor2 = () => {
+      switch (stateLED2) {
+        case "on":
+          return "limegreen"; // Enciende con 1
+        case "waiting":
+          return "yellow";    // Enciende con 2
+        case "off":
+        default:
+          return "#f73d18ff"; // Enciende con 0
+      }
+    };
+
+
+const connectDUALONE = async () => {
+  try {
+    // pedir puerto al usuario
+    const selectedPort: SerialPort = await (navigator as any).serial.requestPort();
+    await selectedPort.open({ baudRate: 115200 }); 
+
+    // guardamos el puerto en el estado
+    setPort(selectedPort);
+
+    // empezamos a leer de Arduino
+    readFromDual(selectedPort);
+  } catch (err) {
+    console.error("Error al conectar con la placa:", err);
+  }
+};
+
+
+const sendToDual = async (char: string) => {
+ if (port && port.writable){
+    const encoder = new TextEncoder();
+    const writer = port.writable.getWriter();
+    await writer.write(encoder.encode(char));
+    writer.releaseLock();
+    console.log("JSON enviado:", char); // <-- ahora sí imprime el dato enviado
+ }
+};
+
+const readFromDual = async (selectedPort: SerialPort) => {
+  const decoder = new TextDecoderStream();
+  (selectedPort.readable as any).pipeTo(decoder.writable as any);
+  const reader = decoder.readable.getReader();
+
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    if (value) {
+      buffer += value; // acumulamos en el buffer
+
+      let parts = buffer.split("\n");  // separamos por salto de línea
+      buffer = parts.pop() || "";      // guardamos lo que quedó incompleto
+      
+      for (const part of parts){
+
+        const trimmed = part.trim();
+        if (!trimmed) continue; //evita parsear vacío
+
+        try {
+          // Intentamos convertir el buffer en JSON
+          const parsed = JSON.parse(trimmed);
+          console.log("JSON recibido:", parsed); // Imprimes JSON en crudo
+
+          // Si trae alguna clave "LecturaCorto", la mostramos en la casilla
+          // Si trae alguna clave "LecturaPolaridad", la mostramos en la casilla
+
+          if (parsed.LecturaCorto) setJSONCorto(parsed.LecturaCorto);
+          if (parsed.LecturaPolaridad) setJSONPolaridad(parsed.LecturaPolaridad);
+          
+          if (parsed.Led1) setLED1On(parsed.Led1);
+          if (parsed.Led2) setLED2On(parsed.Led2);
+
+          //buffer = ""; // limpiamos buffer tras parseo correcto
+        } 
+        catch (err) {
+          console.error("Error parseando JSON:", err, trimmed);
+        }
+      }
+    }
+  }
+};
+
+
+/*
+const readFromDual = async (selectedPort: SerialPort) => {
+  const decoder = new TextDecoderStream();
+  (selectedPort.readable as any).pipeTo(decoder.writable as any);
+  const reader = decoder.readable.getReader();
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    if (value) {
+      console.log("MCU manda:", value);
+
+      // si Arduino manda "0" → LED 1 apagado
+      if (value.includes("0")) {
+        setLED1On("off");
+      }
+
+      // si Arduino manda "1" → LED 1 encendido
+      if (value.includes("1")) {
+        setLED1On("on");
+      }
+
+      // si manda "2" → LED 1 en espera
+      if (value.includes("2")){
+        setLED1On("waiting");
+      }
+
+      // si manda "3" → LED 2 apagado
+      if (value.includes("3")){
+        setLED2On("off");
+      }
+      // si manda "4" → LED 2 encendido
+      if (value.includes("4")){
+        setLED2On("on");
+      }
+      // si manda "5" → LED 2 en espera
+      else if (value.includes("5")){
+        setLED2On("waiting");
+      }
+    }
+  }
+};
+*/
+
+
+  return (
+    <main
+      style={{
+
+        width: "565px",        // ancho fijo
+        margin: "0 auto",      // centra horizontalmente
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        gap: "20px",
+        padding: "20px",
+      }}
+
+
+    >
+      {/* Sección superior ID de producto */}
+      <div
+        style={{
+          display: "flex",       // alineación en fila
+          alignItems: "center",  // centrado vertical
+          gap: "10px",           // espacio entre elementos
+        }}
+      >
+        <h2 style={{ margin: 0 }}>ID del producto</h2>
+
+        <input
+          ref={inputRef}
+          type="text"
+          value={messages}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          style={{ width: "200px", height: "25px" }}
+        />
+
+    <button onClick={connectDUALONE}>Seleccionar puerto COM para uC</button>
+
+      </div>
+
+    {/* Espacio de Tablero de indicadores*/}
+       <div
+        style={{
+
+            display: "flex",
+            flexDirection: "row",   // o "row" si quieres en fila
+            justifyContent: "center",  // centra verticalmente
+            alignItems: "center",      // centra horizontalmente
+
+
+            border: "2px solid #333",       // borde oscuro
+            borderRadius: "10px",           // esquinas redondeadas
+            padding: "40px",                // espacio interno
+            backgroundColor: "#f5f5f5",     // color de fondo claro
+            boxShadow: "2px 2px 10px rgba(0,0,0,0.2)", // sombra para dar relieve
+            width: "490px",                 // ancho fijo opcional
+            height: "1px",                 // ancho fijo opcional
+        }}
+        >
+
+
+        <h3 style={{         
+          alignItems: "center", 
+          marginTop: 20 }}
+          >Tablero de indicadores 🔎 </h3>
+
+    {/* Fila 1 */}
+    <div style={{ 
+        display: "flex", 
+        alignItems: "center", 
+        gap: "12px" }}>
+
+    <div
+    style={{
+        width: "20px",
+        height: "20px",
+        borderRadius: "50%",
+        backgroundColor: "limegreen",
+        border: "1px solid #333",
+    }}
+        ></div>
+        <span>Prueba aprobada</span>
+    </div>
+
+    {/* Fila 2 */}
+    <div style={{ 
+        display: "flex", 
+        alignItems: "center", 
+        gap: "12px" }}>
+        <div
+        style={{
+            width: "20px",
+            height: "20px",
+            borderRadius: "50%",
+            backgroundColor: "red",
+            border: "1px solid #333",
+        }}
+        ></div>
+        <span>Prueba fallida</span>
+    </div>
+
+    {/* Fila 3 */}
+    <div style={{ 
+        display: "flex", 
+        alignItems: "center", 
+        gap: "12px" }}>
+        <div
+        style={{
+            width: "20px",
+            height: "20px",
+            borderRadius: "50%",
+            backgroundColor: "yellow",
+            border: "1px solid #333",
+        }}
+        ></div>
+        <span>Espera...</span>
+    </div>
+    </div>
+
+
+      {/* Zona de botones e indicadores LEDS */}
+      <div
+        style={{
+          flex: 1,
+          display: "flex", // dividir en columnas
+          justifyContent: "center",
+          alignItems: "flex-start",
+          gap: "10px",
+          padding: "5px",
+        }}
+      >
+
+        {/* Columna izquierda: Botones */}
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: "10px",
+          }}
+        >
+          <h3>Pruebas</h3>
+
+        {/*Botón de activación de Prueba de Cortocircuito*/}
+        <button onClick={() => sendToDual("{\"Function\":\"Cortocircuito\"}")}>
+        {stateLED1 ? "Cortocircuito" : "Cortocircuito"}
+        </button>
+
+        {/*Botón de activación de Prueba de Polaridad*/}
+        <button onClick={() => sendToDual("{\"Function\":\"Polaridad\"}")}>
+          {stateLED2 ? "Polaridad" : "Polaridad"}
+        </button>
+        </div>
+
+        {/* Columna derecha: LEDs indicadores */}
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            alignItems: "center",
+            gap: "12px",
+            padding: "0px",
+          }}
+        >
+          <h3>Indicadores</h3>
+
+          {/* LED Cortocirtuito */}
+          <div
+            style={{
+              width: "30px",
+              height: "30px",
+              borderRadius: "50%",
+              backgroundColor: getColor1(),
+              border: "2px solid #333",
+              marginBottom: "10px",
+              transition: "background-color 0.5s ease" // Transición
+            }}
+          ></div>
+
+          {/* LED Polaridad */}
+          <div
+            style={{
+              width: "30px",
+              height: "30px",
+              borderRadius: "50%",
+              backgroundColor: getColor2(),
+              border: "2px solid #333",
+              marginBottom: "10px",
+              transition: "background-color 0.5s ease" // Transición
+            }}
+          ></div>
+        </div>
+
+        {/* Columna derecha: Texto desde JSON */}
+        <div style={{ 
+              flex: 1, 
+              display: "flex", 
+              flexDirection: "column", 
+              justifyContent: "center",
+              alignItems: "center",
+              gap: "10px" }}>
+
+          <h3>Sensado</h3>
+          <textarea
+            value={JSONCorto} // Dato recibido de lectura en Corto
+            readOnly
+            style={{ width: "100%", 
+                    height: "15px", 
+                    resize: "none", 
+                    padding: "10px",
+                    marginBottom: "5px" }}
+          />
+          <textarea
+            value={JSONPolaridad} // Dato recibido de lectura en inv polaridad
+            readOnly
+            style={{ width: "100%", 
+                    height: "15px", 
+                    resize: "none", 
+                    padding: "10px" }}
+          />
+        </div>
+      </div>
+
+      <button onClick={() => window.open("/Config_Carga_Variable", "_blank")}>
+        Configuración de carga variable
+      </button>
+
+{showMessage && (
+  <div
+    style={{
+      position: "fixed",
+      top: 0,
+      left: 0,
+      width: "100%",
+      height: "100%",
+      backgroundColor: "rgba(0,0,0,0.6)", // fondo semi-transparente
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      zIndex: 1000,
+    }}
+  >
+    <div
+      style={{
+        backgroundColor: "white",
+        padding: "30px",
+        borderRadius: "15px",
+        textAlign: "center",
+        boxShadow: "0 5px 20px rgba(0,0,0,0.3)",
+        animation: "fadeIn 0.5s ease", // animación opcional
+      }}
+    >
+      <h2 style={{ color: "green" }}>✅ ¡El producto cumple las especificaciones! ✅</h2>
+    <button
+      onClick={() => {
+        setShowMessage(false);   // Cierra el aviso
+        setLED1On("off");        // Apaga LED1
+        setLED2On("off");        // Apaga LED2
+        setMessages("");         // Limpia casillas
+        setJSONCorto("");        // Limpia JSON
+        setJSONPolaridad(""); 
+      }}
+    >
+  Cerrar
+</button>
+
+    </div>
+  </div>
+)}
+
+
+    </main>
+  );
+}

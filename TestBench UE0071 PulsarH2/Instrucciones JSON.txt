@@ -1,0 +1,36 @@
+/*
+1. Activar carga:
+   {"Funcion": "Other", "Config": {"Resolution": [], "Range": []}, "Start": "CFG_ON"}
+
+2. Desactivar carga:
+   {"Funcion": "Other", "Config": {"Resolution": [], "Range": []}, "Start": "CFG_OFF"}
+
+3. Configurar modo dinámico:
+   {"Funcion": "DYN", "Config": {"Resolution": [3, 1, 3, 1], "Range": [50, 30]}, "Start": "CFG_ON"}
+   
+4. Configurar modo list:
+   {"Funcion": "LIST", "Config": {"Resolution": [5, 1, 2, "STEP1"], "Range": [50, 30]}, "Start": "CFG_ON"}
+   
+ 5. Iniciar lectura:
+   {"Funcion": "Other", "Config": {"Resolution": [], "Range": []}, "Start": "Read"}
+   
+6. Reset del sistema:
+   {"Funcion": "RST", "Config": {"Resolution": [], "Range": []}, "Start": "CFG_ON"}
+   
+7. Configurar idioma inglés:
+   {"Funcion": "LANG", "Config": {"Resolution": [], "Range": []}, "Start": "CFG_ON"}
+
+
+
+// JSON para pruebas TEST Monitor Serie Pulsar H2
+
+{"Function":"Fuente ON"}
+{"Function":"Fuente OFF"}
+
+{"Function":"COM ON"}
+{"Function":"COM OFF"}
+{"Function":"Carga Bat"}
+
+
+
+

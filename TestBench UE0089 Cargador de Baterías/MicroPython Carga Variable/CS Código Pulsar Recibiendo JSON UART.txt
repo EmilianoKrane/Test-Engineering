@@ -1,0 +1,447 @@
+# Este es el código final para la configuración de la carga variable
+
+
+# from amg88xx import AMG88XX
+import machine
+import uselect
+import time
+import sys
+from _thread import start_new_thread
+import random
+import ujson
+
+
+'''
+author: @Cesar🐧
+version : 2.0
+path_name: beta_code.py
+compiler: MicroPython v1.20.0 on 2023-04-26; ESP32 module with ESP32
+date: 05/01/2024
+Description: 
+
+    -This code olny focus in the read load data of the power analyzer.
+    -The data is stored in a dictionary and printed on the screen.
+    -The data is read in one core and the data from the power analyzer in another core.
+
+========================================
+COMANDOS JSON DE ENTRADA SOPORTADOS
+========================================
+
+1. CONFIGURACIÓN MODO LIST:
+   {"Funcion": "LIST", "Config": {"Resolution": [10, 0.2, 0.5, "STEP1"], "Range": [50, 3]}, "Start": "CFG_ON"}
+   
+   Parámetros Resolution:
+   - [0]: Número de pasos (int)
+   - [1]: Paso de corriente en A (float)
+   - [2]: Tiempo por paso en s (float)  
+   - [3]: Nombre del archivo (string)
+   
+   Parámetros Range:
+   - [0]: Rango de corriente (int)
+   - [1]: Rango de voltaje (int)
+
+2. CONFIGURACIÓN MODO DYN (Dinámico):
+   {"Funcion": "DYN", "Config": {"Resolution": [0.350, 0.20, 0.350, 0.20], "Range": [50, 3]}, "Start": "CFG_ON"}
+   
+   Parámetros Resolution:
+   - [0]: Nivel A dinámico (float)
+   - [1]: Ancho A dinámico (float)
+   - [2]: Nivel B dinámico (float)
+   - [3]: Ancho B dinámico (float)
+
+3. CONFIGURACIÓN IDIOMA:
+   {"Funcion": "LANG", "Config": {"Resolution": [], "Range": []}, "Start": "CFG_ON"}
+
+4. RESET DEL SISTEMA:
+   {"Funcion": "RST", "Config": {"Resolution": [], "Range": []}, "Start": "CFG_ON"}
+
+5. COMANDOS DE CONTROL:
+   
+   Activar carga:
+   {"Funcion": "Other", "Config": {"Resolution": [], "Range": []}, "Start": "CFG_ON"}
+   
+   Desactivar carga:
+   {"Funcion": "Other", "Config": {"Resolution": [], "Range": []}, "Start": "CFG_OFF"}
+   
+   Iniciar lectura de datos:
+   {"Funcion": "Other", "Config": {"Resolution": [], "Range": []}, "Start": "Read"}
+
+========================================
+RESPUESTAS JSON QUE ENVÍA EL SISTEMA
+========================================
+
+1. Respuesta de configuración:
+   {"CONF": "DYN", "response": true, "muestras": null}
+
+2. Datos de medición:
+   {"CONF": null, "muestras": ["3.45;1.23;4.25", "3.46;1.24;4.28"], "response": true}
+
+3. Control de carga:
+   {"CONF": "CFG_ON", "muestras": null}
+   {"CONF": "CFG_OFF"}
+
+========================================
+EJEMPLO DE USO COMPLETO
+========================================
+1. Activar carga:
+   {"Funcion": "Other", "Config": {"Resolution": [], "Range": []}, "Start": "CFG_ON"}
+
+2. Desactivar carga:
+   {"Funcion": "Other", "Config": {"Resolution": [], "Range": []}, "Start": "CFG_OFF"}
+
+3. Configurar modo dinámico:
+   {"Funcion": "DYN", "Config": {"Resolution": [0.350, 5.20, 0.150, 1.20], "Range": [50, 3]}, "Start": "CFG_ON"}
+   
+4. Configurar modo list:
+   {"Funcion": "LIST", "Config": {"Resolution": [10, 0.2, 0.5, "STEP1"], "Range": [50, 3]}, "Start": "CFG_ON"}
+   
+ 5. Iniciar lectura:
+   {"Funcion": "Other", "Config": {"Resolution": [], "Range": []}, "Start": "Read"}
+   
+6. Reset del sistema:
+   {"Funcion": "RST", "Config": {"Resolution": [], "Range": []}, "Start": "CFG_ON"}
+   
+7. Configurar idioma inglés:
+   {"Funcion": "LANG", "Config": {"Resolution": [], "Range": []}, "Start": "CFG_ON"}
+   
+========================================
+
+'''
+
+# ==== CONFIGURACIÓN DE DEBUG ====
+DEBUG = False  # Cambiar a False para desactivar SOLO los mensajes de debug
+              # Las respuestas JSON SIEMPRE se envían (son datos importantes)
+# ==== FIN CONFIGURACIÓN DEBUG ====
+
+def debug_print(message):
+    """Función para imprimir mensajes de debug solo si DEBUG está activado
+    NOTA: Las respuestas JSON se envían SIEMPRE, independientemente de esta bandera"""
+    if DEBUG:
+        print(message)
+
+flag_print = False
+flag_finish = False
+response = False
+cont = 0
+data = {
+        "CONF": None,
+        "muestras": ['0.0,0.0,0.0'],
+        "response": False
+    }              
+              
+# Global constants
+TX_PIN = 1
+RX_PIN = 0
+
+TX_PIN2 = 5
+RX_PIN2 = 4
+
+LED_PIN = 6
+BUTTON_PIN = 9
+
+# UART para comunicar con la carga variable
+uart1 = machine.UART(1, baudrate=9600, tx=machine.Pin(TX_PIN, machine.Pin.OUT), rx=machine.Pin(RX_PIN, machine.Pin.IN))
+
+# UART para comunicar con la PagWeb
+uart2 = machine.UART(2, baudrate=9600, tx=machine.Pin(TX_PIN2, machine.Pin.OUT), rx=machine.Pin(RX_PIN2, machine.Pin.IN))
+
+
+meas=list()
+matriz =list()
+num_mues = 2
+
+
+def init_var(_num_mues):
+    global meas
+    global num_mues
+    num_mues=_num_mues
+    meas.clear()
+    for _ in range(0,_num_mues):
+        meas.append([0])
+
+uart2_buffer = b""
+
+def readSerialUART2():
+    global uart2_buffer
+    while uart2.any():
+        uart2_buffer += uart2.read(1)  # leer byte por byte
+        if b"\n" in uart2_buffer:      # detecta línea completa
+            line, uart2_buffer = uart2_buffer.split(b"\n", 1)
+            try:
+                text = line.decode().strip()
+                if text:
+                    _command = ujson.loads(text)
+                    if all(k in _command for k in ("Funcion","Config","Start")):
+                        print("DEBUG: JSON recibido correctamente:", _command)
+                        return _command
+                    else:
+                        print("JSON incompleto:", _command)
+            except Exception as e:
+                print("Error parseando JSON:", e, line)
+    return None
+
+
+    
+def readSerial():
+    try:
+        data = sys.stdin.readline() 
+        if data.strip():  # Solo procesar si hay datos
+            debug_print(f"DEBUG: Datos recibidos: {data.strip()}")
+            _command = ujson.loads(data)
+            debug_print(f"DEBUG: JSON parseado correctamente: {_command}")
+            
+            # Validar que el JSON tiene los campos requeridos
+            if 'Funcion' not in _command:
+                debug_print(f"DEBUG: JSON sin campo 'Funcion': {_command}")
+                return None
+            if 'Config' not in _command:
+                debug_print(f"DEBUG: JSON sin campo 'Config': {_command}")
+                return None
+            if 'Start' not in _command:
+                debug_print(f"DEBUG: JSON sin campo 'Start': {_command}")
+                return None
+                
+            return _command
+        else:
+            return None
+        
+    except ValueError as e:
+        debug_print(f"DEBUG: Error parseando JSON: {e}")
+        debug_print(f"DEBUG: Datos problemáticos: {data}")
+        return None
+    except Exception as e:
+        debug_print(f"DEBUG: Error inesperado en readSerial: {e}")
+        debug_print(f"DEBUG: Datos que causaron error: {data}")
+        return None
+    
+def start_load(_command):
+    
+    global json_data
+    global flag_print
+    
+    debug_print(f"DEBUG: start_load ejecutado con comando: {_command}")
+    
+    if _command == "CFG_ON":
+        debug_print("DEBUG: Enviando INP 1 al UART")
+        uart1.write("INP 1\n") # Envío de comando a UART de CargaVar
+        data = {
+        "CONF": _command,
+        "muestras": None,
+        }
+        #return True
+        
+    elif _command == "CFG_OFF":
+        debug_print("DEBUG: Enviando INP 0 al UART")
+        uart1.write("INP 0\n") # Envío de comando a UART de CargaVar
+        data = {
+        "CONF": _command
+        }
+        #return False
+    else:
+        debug_print(f"DEBUG: Comando no reconocido: {_command}")
+        return _command
+    
+    json_data = ujson.dumps(data)
+    debug_print(f"DEBUG: JSON respuesta preparado: {json_data}")
+    flag_print = True
+
+def generate_data(num_steps, current_step, time_step):
+    data_list = []
+    for step in range(num_steps):
+        current = (step + 1) * current_step # 100mA * step
+        time = time_step # Changed to 0.5 ms (500 us)
+        riso = 0.01  # 100us
+        data = f"{step + 1} {current:.2f},{time},{riso:.4f}"
+        data_list.append(data)
+    return data_list
+
+def set_uart_command(command):
+    uart2.write(command)
+
+def config_load(command, d,ranger):
+    debug_print(f"DEBUG: config_load ejecutado - comando: {command}, datos: {d}, rangos: {ranger}")
+
+    if command == "LIST":
+        debug_print("DEBUG: Configurando modo LIST")
+        data_for_steps = generate_data(d[0], d[1], d[2])
+        uart1.write("FUNC LIST\n")							# Envío de comando a UART de CargaVar
+        uart1.write("CURR:RANG "+str(ranger[0])+"\n")		# Envío de comando a UART de CargaVar
+        uart1.write("LIST CLEAR\n")							# Envío de comando a UART de CargaVar
+        uart1.write("LIST:FILE "+str(d[3])+"\n")			# Envío de comando a UART de CargaVar
+        for item in data_for_steps:
+            uart1.write("LIST ADD\n") 						# Envío de comando a UART de CargaVar
+            uart1.write("LIST:LEV:" + str(item)+"\n")		# Envío de comando a UART de CargaVar
+            debug_print(f"DEBUG: LIST:LEV: {item}")
+        uart1.write( "LIST DONE\n")							# Envío de comando a UART de CargaVar
+        uart1.write("LIST:MODE CONT\n")						# Envío de comando a UART de CargaVar
+        debug_print("DEBUG: Configuración LIST completada")
+        return True
+    
+    if command == "DYN":
+        debug_print("DEBUG: Configurando modo DYN")
+        uart1.write("FUNC DYN\n")
+        uart1.write("CURR:RANG "+str(ranger[0])+"\n")
+        uart1.write("VOLT:RANG "+str(ranger[1])+"\n")
+        uart1.write("DYN:ALEV "+str(d[0])+"\n")
+        uart1.write("DYN:AWID "+str(d[1])+"\n")
+        uart1.write("DYN:BLEV "+str(d[2])+"\n")
+        uart1.write("DYN:BWID "+str(d[3])+"\n")
+        debug_print("DEBUG: Configuración DYN completada")
+        
+        return True
+    
+    if command == "LANG":
+        debug_print("DEBUG: Configurando idioma")
+        uart1.write("SYS:LANG EN\n")
+        uart1.write("SYS:VOIC 0\n")
+        debug_print("DEBUG: Idioma configurado a English")
+        return True
+    
+    if command == "RST":
+        debug_print("DEBUG: Ejecutando reset")
+        uart1.write("*RST\n")
+        debug_print("DEBUG: Reset enviado")
+        return True
+    
+    else:
+        debug_print(f"DEBUG: Comando no reconocido en config_load: {command}")
+        return False
+
+
+def create_random_list2():
+    random_list = (
+        str(random.uniform(0, 100)) + ";"
+        + str(random.uniform(0, 100)) + ";"
+        + str(random.uniform(0, 100)) + "\n"
+    )
+    return random_list
+
+def CORE1():
+    global data
+    global num_mues
+    global flag_print
+    global flag_finish
+    global response
+    global json_data
+    json_data = ujson.dumps(data)
+    while True:
+        if flag_finish == True:
+#             print("mas te vale funcionar ")
+            json_data = ujson.dumps(data)
+            time.sleep(0.01)
+        elif flag_print == True:
+            # Envío de respuesta JSON - SIEMPRE se envía (independiente de DEBUG)
+            debug_print(f"DEBUG: Enviando JSON por stdout: {json_data}")
+            sys.stdout.buffer.write(str(json_data)+ '\n')  # ← RESPUESTA JSON SIEMPRE SE ENVÍA
+            flag_print = False
+        else:
+            #result = readSerial()
+            result = readSerialUART2()
+
+            if result is not None:
+                debug_print(f"DEBUG: Comando JSON recibido y procesado: {result}")
+                
+                # Validación adicional por seguridad
+                try:
+                    if result.get('Funcion') != "Other":
+                        debug_print(f"DEBUG: Ejecutando función de configuración: {result['Funcion']}")
+                        response=config_load(result['Funcion'],result["Config"]["Resolution"],result["Config"]["Range"])
+                        data = {
+                            "CONF": result['Funcion'],
+                            "response": response,
+                            "muestras": None,
+                        }
+                        json_data = ujson.dumps(data)
+                        debug_print(f"DEBUG: Respuesta de configuración: {json_data}")
+                        flag_print = True
+
+                    else:
+                        debug_print(f"DEBUG: Ejecutando comando de control: {result['Start']}")
+                        __command=start_load(result['Start']) 
+                        if result['Start'] == 'Read':
+                            debug_print("DEBUG: Iniciando proceso de lectura de datos")
+                            data = {
+                                "CONF": None,
+                                "response": response,
+                                "muestras": None,
+                            }
+                            json_data = ujson.dumps(data)
+                            debug_print(f"DEBUG: Datos de lectura preparados: {json_data}")
+                            flag_finish = True
+                except KeyError as e:
+                    debug_print(f"DEBUG: Campo faltante en JSON: {e}")
+                    debug_print(f"DEBUG: JSON problemático: {result}")
+                except Exception as e:
+                    debug_print(f"DEBUG: Error procesando comando: {e}")
+                    debug_print(f"DEBUG: JSON que causó error: {result}")
+            else:
+                # Solo mostrar este mensaje ocasionalmente para no saturar
+                pass  # Removido el debug de "sin datos" para evitar spam
+         
+           
+                       
+def CORE2():
+    global cont
+    global temp
+    global meas
+    global data
+    global num_mues
+    global flag_read_end_data
+    global response
+    global flag_print
+    global flag_finish
+    
+    while True:
+        if flag_finish == True:
+            debug_print(f"DEBUG: CORE2 - Iniciando lectura de {num_mues} muestras")
+            while cont < num_mues:
+                t0 = time.ticks_us()
+                debug_print(f"DEBUG: CORE2 - Solicitando medición {cont+1}/{num_mues}")
+                #uart2.write("MEAS:VOLT?;MEAS:CURR?;MEAS:POW?\n")
+                uart1.write("MEAS:VOLT?;MEAS:CURR?;MEAS:POW?\n")
+                time.sleep(0.1)
+#                 # este codigo es para leer el sensor de potencia
+                if uart2.any():
+                    data = uart2.read()
+                    
+                    meas[cont]=data.decode()    
+                else:
+                    meas[cont]= '0.0,0.0,0.0'
+                # termina el codigo de lectura del sensor de potencia
+                #  el codigo de abajo es para simular la lectura del sensor de potencia
+                # _data = create_random_list2()
+                # meas[cont]= _data
+                debug_print(f"DEBUG: CORE2 - Datos del sensor: {meas[cont].strip()}")
+                # termina el codigo de simulacion
+                time.sleep(0.05)
+
+                data = {
+                    "CONF": None,
+                    "muestras": meas,
+                    "response": response
+                    }              
+              
+                cont = cont+1
+                tf = time.ticks_us()
+                debug_print(f"DEBUG: CORE2 - Tiempo de medición: {tf - t0} us")
+            debug_print(f"DEBUG: CORE2 - Todas las muestras completadas, enviando datos")
+            flag_print = True
+            debug_print("DEBUG: contador finaliza en: "+str(cont))
+            cont = 0
+            flag_finish = False
+
+init_var(2)
+set_uart_command("\n")
+set_uart_command("\n")
+time.sleep(2)
+config_load("LANG",0,0)
+set_uart_command("\n")
+set_uart_command("\n")
+time.sleep(2)
+
+start_new_thread(CORE2, ())
+
+while True:
+    CORE1()
+
+

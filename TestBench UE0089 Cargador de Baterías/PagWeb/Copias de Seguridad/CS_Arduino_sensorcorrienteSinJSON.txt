@@ -1,0 +1,236 @@
+// Código de integración entre Web Vite y Pulsar ESP32-C6
+
+// --- BIBLIOTECAS --- 
+#include <Wire.h>
+#include <Adafruit_INA219.h>
+#include <HardwareSerial.h>
+
+// Crear objeto para UART2
+HardwareSerial API(1);
+
+// Pines para UART2 (puedes reasignarlos)
+#define RX2 D4    // GPIO9 como RX
+#define TX2 D5    // GPIO8 como TX
+
+// Pines para comunicación I2C con el sensor de corriente
+#define I2C_SDA 6
+#define I2C_SCL 7
+
+TwoWire I2CBus = TwoWire(0);
+Adafruit_INA219 ina219;
+
+// Offset en vacío medido previamente (mV)
+const float shuntOffset_mV = 0.0;  
+
+const float R_SHUNT = 0.05;  // Resistencia Shunt = 50 mΩ
+
+// Pines de botones
+#define BTN1 20 // botón de cortocircuito
+#define BTN2 21 // Botón de polaridad
+
+// Pines de relés (activo en LOW)
+#define RELAY1 4    // Relevadores de polaridad
+#define RELAY2 22
+
+#define RELAY3 1    // Relevadores de cortocircuito
+#define RELAY4 3
+
+// Inicialización de botones
+bool estadoBtn1 = false;
+bool estadoBtn2 = false;
+
+
+
+// variable de lectura de corriente con el sensor
+float corrienteSensor = 0; 
+
+
+void setup() {
+
+  // Iniciar UART0 (USB) para depuración
+  Serial.begin(115200);
+  Serial.println("UART0 listo (USB)");
+                      
+  // Iniciar UART2 en los pines seleccionados
+  API.begin(115200, SERIAL_8N1, RX2, TX2);
+  Serial.println("UART2 iniciado en RX=9, TX=8");
+
+  // Iniciar comunicación I2C
+  I2CBus.begin(I2C_SDA, I2C_SCL);
+
+  if (!ina219.begin(&I2CBus)) {
+    Serial.println("No se encontró el chip INA219");
+    while (1) { delay(10); }
+  }
+
+  // Configurar botones con resistencia pull-up interna
+  pinMode(BTN1, INPUT_PULLUP); // Cortocircuito
+  pinMode(BTN2, INPUT_PULLUP);
+
+  // Configurar pines de relés como salida
+  pinMode(RELAY1, OUTPUT);
+  pinMode(RELAY2, OUTPUT);
+  pinMode(RELAY3, OUTPUT);
+  pinMode(RELAY4, OUTPUT);
+
+  // Apagar todos los relés al inicio (HIGH = apagado)
+  digitalWrite(RELAY1, HIGH);
+  digitalWrite(RELAY2, HIGH);
+  digitalWrite(RELAY3, HIGH);
+  digitalWrite(RELAY4, HIGH);
+
+  Serial.println("Midiendo voltaje y corriente con el INA219 ...");
+}
+
+
+
+void loop() {
+
+
+  if (API.available() || digitalRead(BTN1) == LOW  || digitalRead(BTN2) == LOW){
+    
+    //  Accionamiento desde PagWeb
+    if (API.available() && digitalRead(BTN1) == HIGH && digitalRead(BTN2) == HIGH){
+
+      char dato = API.read(); // Caracter de entrada para seleccionar prueba
+
+      // Ejectuar prueba de Cortocircuito
+      if (dato == 'A') {
+        Serial.println("Ejecución de prueba de Cortocircuito"); 
+        API.write("2"); // Caracter para indicador amarillo en PagWeb
+        delay(2000); // Tiempo de espera para mostrar el amarillo
+
+        // Accionamiento de relevadores
+        digitalWrite(RELAY1, LOW);    // Activo
+        digitalWrite(RELAY2, LOW);    // Activo
+        
+        delay(5); // Tiempo de anti rebote
+        corrienteSensor = medirCorriente();
+
+        digitalWrite(RELAY1, HIGH);    // Apagado
+        digitalWrite(RELAY2, HIGH);    // Apagado
+        delay(25);
+
+        Serial.print("Corriente en Corto: ");
+        Serial.print(corrienteSensor, 3);
+        Serial.println(" A");
+
+        API.write("1"); // Caracter para indicador verde en PagWeb
+        delay(5000);
+        API.write("0"); // Caracter para indicador rojo en PagWeb
+      }
+
+      // Ejecutar prueba de Polaridad
+      if (dato == 'B') {
+        Serial.println("Ejecución de prueba de Polaridad"); 
+        API.write("5"); // Caracter para indicador amarillo en PagWeb
+        delay(2000); // Tiempo de espera para mostrar el amarillo
+
+        // Accionamiento de relevadores
+        digitalWrite(RELAY3, LOW);    // Activo
+        digitalWrite(RELAY4, LOW);    // Activo
+
+        delay(25); // Tiempo de anti rebote
+        corrienteSensor = medirCorriente();
+
+        digitalWrite(RELAY3, HIGH);    // Apagado
+        digitalWrite(RELAY4, HIGH);    // Apagado
+        delay(25);
+
+        Serial.print("Corriente en inv de Polaridad: ");
+        Serial.print(corrienteSensor, 3);
+        Serial.println(" A");
+
+        API.write("4"); // Caracter para indicador verde en PagWeb
+        delay(1000);
+        API.write("3"); // Caracter para indicador rojo en PagWeb
+      }
+    }
+
+    // Accionamiento por botón de Cortocircuito
+    else if(digitalRead(BTN1) == LOW && digitalRead(BTN2) == HIGH){
+
+        Serial.println("Ejecución de prueba de Cortocircuito Manual"); 
+
+        // Accionamiento de relevadores
+        digitalWrite(RELAY1, LOW);    // Activo
+        digitalWrite(RELAY2, LOW);    // Activo
+        
+        delay(5); // Tiempo de anti rebote
+        corrienteSensor = medirCorriente();
+
+        digitalWrite(RELAY1, HIGH);    // Apagado
+        digitalWrite(RELAY2, HIGH);    // Apagado
+        delay(25);
+
+        API.write("2"); // Caracter para indicador amarillo en PagWeb
+        delay(2000); // Tiempo de espera para mostrar el amarillo
+
+        Serial.print("Corriente en Corto: ");
+        Serial.print(corrienteSensor, 3);
+        Serial.println(" A");
+
+        API.write("1"); // Caracter para indicador verde en PagWeb
+        delay(1000);
+        API.write("0"); // Caracter para indicador rojo en PagWeb
+    }
+
+    // Accionamiento por botón de Polaridad
+    else if(digitalRead(BTN2) == LOW && digitalRead(BTN1) == HIGH){
+
+        Serial.println("Ejecución de prueba de Polaridad Manual"); 
+
+        // Accionamiento de relevadores
+        digitalWrite(RELAY3, LOW);    // Activo
+        digitalWrite(RELAY4, LOW);    // Activo
+
+        delay(25); // Tiempo de anti rebote
+        corrienteSensor = medirCorriente();
+
+        digitalWrite(RELAY3, HIGH);    // Apagado
+        digitalWrite(RELAY4, HIGH);    // Apagado
+        delay(25);
+
+        API.write("5"); // Caracter para indicador amarillo en PagWeb
+        delay(2000); // Tiempo de espera para mostrar el amarillo
+
+        Serial.print("Corriente en Corto: ");
+        Serial.print(corrienteSensor, 3);
+        Serial.println(" A");
+
+        API.write("4"); // Caracter para indicador verde en PagWeb
+        delay(1000);
+        API.write("3"); // Caracter para indicador rojo en PagWeb 
+    }
+
+    // Falso contacto
+    else{
+        digitalWrite(RELAY1, HIGH);    // Apagado
+        digitalWrite(RELAY2, HIGH);    // Apagado
+        digitalWrite(RELAY3, HIGH);    // Apagado
+        digitalWrite(RELAY4, HIGH);    // Apagado
+    }
+  }
+} // void loop()
+                                                                                                                                    
+
+// ## DECLARACIÓN DE FUNCIONES ##
+
+// ==== Medición INA219 ====
+float medirCorriente(){
+
+  float shunt_mV = ina219.getShuntVoltage_mV();
+  float bus_V = ina219.getBusVoltage_V();
+
+  shunt_mV -= shuntOffset_mV;  
+  float shunt_V = shunt_mV / 1000.0;
+  float current_A = shunt_V / R_SHUNT; // Corriente de interés
+  float load_V = bus_V + shunt_V;
+  float power_W = load_V * current_A;
+
+  return current_A;
+}
+
+
+
+
