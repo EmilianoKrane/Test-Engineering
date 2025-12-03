@@ -12,8 +12,8 @@
 #define RX2 D4  // GPIO15 como RX
 #define TX2 D5  // GPIO19 como TX
 
-#define I2C_SDA 22  // Sensor de corriente por I2C
-#define I2C_SCL 23
+#define I2C_SDA 6  // Sensor de corriente por I2C
+#define I2C_SCL 7
 
 #define RELAYA 8  // Accionamiento de Rele Fuente
 #define RELAYB 9
@@ -21,8 +21,8 @@
 #define RELAYPWM1 D0  // Accionamiento de Rele de conmutación PWM
 #define RELAYPWM2 D1
 
-int PWM_1 = 6;  // PWM pin 1
-int PWM_2 = 7;  // PWM pin 2
+int PWM_1 = 4;  // PWM pin 1
+int PWM_2 = 5;  // PWM pin 2
 
 
 // ==== Inicialización de objetos
@@ -99,6 +99,7 @@ void loop() {
 
       if (Function == "PWM_1") opc = 1;
       else if (Function == "PWM_2") opc = 2;
+      else if (Function == "Max") opc = 3;
 
       switch (opc) {
 
@@ -133,7 +134,7 @@ void loop() {
               if (lastAverage < 0) {
                 lastAverage = average;
               } else {
-                if (average > lastAverage + 0.5) {
+                if (average > lastAverage + 0.4) {
                   // Sí está creciendo → OK
                   status1 = status1 && true;
                 } else {
@@ -171,7 +172,7 @@ void loop() {
             bool status1 = true;
             float lastAverage = -1;
 
-            Serial.println("Ejecución de PWM 1");
+            Serial.println("Ejecución de PWM 2");
             Serial.println("");
             sendJSON.clear();  // Limpia cualquier dato previo
 
@@ -198,7 +199,7 @@ void loop() {
               if (lastAverage < 0) {
                 lastAverage = average;
               } else {
-                if (average > lastAverage + 0.5) {
+                if (average > lastAverage + 0.4) {
                   // Sí está creciendo → OK
                   status1 = status1 && true;
                 } else {
@@ -233,24 +234,45 @@ void loop() {
 
             break;
           }
+
+
+        case 3:
+          {
+
+            digitalWrite(RELAYPWM1, LOW);  //
+            digitalWrite(RELAYPWM2, LOW);
+            delay(500);
+
+            // Fade up
+            for (int i = 0; i < 6; i++) {
+              analogWrite(PWM_1, 0);
+              analogWrite(PWM_2, 0);
+
+              delay(500);
+              Serial.println("Corriente: " + String(medirCorriente()));
+            }
+            break; 
+          }
+    
+      
+      
+      
       }
     }
   }
 }
 
+  // ==== Medición INA219 ====
+  float medirCorriente() {
 
+    float shunt_mV = ina219.getShuntVoltage_mV();
+    float bus_V = ina219.getBusVoltage_V();
 
-// ==== Medición INA219 ====
-float medirCorriente() {
+    shunt_mV -= shuntOffset_mV;
+    float shunt_V = shunt_mV / 1000.0;
+    float current_A = shunt_V / R_SHUNT;  // Corriente de interés
+    float load_V = bus_V + shunt_V;
+    float power_W = load_V * current_A;
 
-  float shunt_mV = ina219.getShuntVoltage_mV();
-  float bus_V = ina219.getBusVoltage_V();
-
-  shunt_mV -= shuntOffset_mV;
-  float shunt_V = shunt_mV / 1000.0;
-  float current_A = shunt_V / R_SHUNT;  // Corriente de interés
-  float load_V = bus_V + shunt_V;
-  float power_W = load_V * current_A;
-
-  return current_A;
-}
+    return current_A;
+  }

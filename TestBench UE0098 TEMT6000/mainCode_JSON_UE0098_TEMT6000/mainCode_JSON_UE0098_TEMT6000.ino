@@ -1,5 +1,5 @@
 /* 
-===== CÓDIGO CONTROL MOTOR JSON ====
+===== CÓDIGO TEMT6000 JSON Integración ====
 */
 
 #include <Wire.h>
@@ -11,6 +11,8 @@
 #define RX2 D4
 #define TX2 D5
 #define SENSOR_PIN 4
+
+#define RELAYCom 20  // Relevador de puerto COM
 
 // ==== Declaración de objetos
 HardwareSerial PagWeb(1);
@@ -31,6 +33,9 @@ void setup() {
   PagWeb.begin(115200, SERIAL_8N1, RX2, TX2);
 
   pinMode(SENSOR_PIN, INPUT);
+  pinMode(RELAYCom, OUTPUT);
+
+  digitalWrite(RELAYCom, LOW);
 
   Serial.println("Reading Qwiic module in digital mode...");
 }
@@ -52,10 +57,13 @@ void loop() {
       switch (opc) {
         case 1:
           {
+            digitalWrite(RELAYCom, HIGH);
             sendJSON.clear();
+
             float val = 0;
             bool state = false;
 
+            delay(100);
             for (int i = 0; i < 10; i++) {
               float lect = analogRead(SENSOR_PIN);
               Serial.println("El valor es: " + String(lect));
@@ -65,7 +73,7 @@ void loop() {
 
             float avg = val / 10;
 
-            if (avg > 750) {
+            if (avg > 2000) {
               Serial.println("Light detected (HIGH): " + String(avg));
               sendJSON["Env"] = "OK";
             } else {
@@ -83,14 +91,17 @@ void loop() {
             sendJSON["Meas_Env"] = String(porcentaje, 2) + " %";
             serializeJson(sendJSON, PagWeb);  // Envío de datos por JSON a la PagWeb
             PagWeb.println();
+            digitalWrite(RELAYCom, LOW);
             break;
           }
 
         case 2:
           {
+            digitalWrite(RELAYCom, HIGH);
             sendJSON.clear();
             float suma = 0;
 
+            delay(100);
             // --- Lectura filtrada ---
             for (int i = 0; i < 10; i++) {
               float lect = analogRead(SENSOR_PIN);
@@ -102,7 +113,7 @@ void loop() {
             float avg = suma / 10.0;
 
             // --- Lógica del sensor IR ---
-            if (avg > 750) {
+            if (avg > 2000) {
               Serial.println("Light detected (HIGH): " + String(avg));
               sendJSON["IR"] = "OK";
             } else {
@@ -121,6 +132,7 @@ void loop() {
 
             serializeJson(sendJSON, PagWeb);
             PagWeb.println();
+            digitalWrite(RELAYCom, LOW);
             break;
           }
       }
