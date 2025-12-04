@@ -3,6 +3,7 @@
 */
 
 #include <HardwareSerial.h>
+#include <ArduinoJson.h>
 
 #define RX2 16
 #define TX2 17
@@ -12,7 +13,15 @@
 #define LED_B 27
 
 
+// ==== Declaración de objetos
 HardwareSerial Bridge(1);
+
+// ==== Declaración de variables
+String JSON_entrada;
+StaticJsonDocument<200> receiveJSON;
+
+String JSON_lectura;  // Variable que envía el JSON de datos
+StaticJsonDocument<200> sendJSON;
 
 void setup() {
   Serial.begin(115200);
@@ -27,22 +36,24 @@ void setup() {
 
 void loop() {
 
-
-  if (Serial.available()) {       // If anything comes in Serial (USB),
-    Bridge.write(Serial.read());  // read it and send it out Serial1 (pins 0 & 1)
+  if (Serial.available()) {  // JSON de salida hacia RP2040
+    Bridge.write(Serial.read());
   }
 
-  if (Bridge.available()) {       // If anything comes in Serial1 (pins 0 & 1)
-    Serial.write(Bridge.read());  // read it and send it out Serial (USB)
+  if (Bridge.available()) {  // JSON de entrada desde RP2040
+    JSON_entrada = Bridge.readStringUntil('\n');
+    DeserializationError error = deserializeJson(receiveJSON, JSON_entrada);
+    Serial.println(JSON_entrada);
   }
 
-  if (!Serial.available()) {  // If anything comes in Serial (USB),
+  if (!Serial.available()) {
     demo();
   }
 }
 
 /*
 {"Function":"meas"}
+{"Function":"buzzer"}
 */
 
 

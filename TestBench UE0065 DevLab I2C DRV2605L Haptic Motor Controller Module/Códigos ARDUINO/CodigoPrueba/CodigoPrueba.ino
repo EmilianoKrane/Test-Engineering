@@ -1,3 +1,4 @@
+/*
 #include <Wire.h>
 #include <Adafruit_DRV2605.h>
 
@@ -69,10 +70,7 @@ void loop() {
   delay(700);
 }
 
-
-
-/*
-
+*/
 
 
 
@@ -81,8 +79,8 @@ void loop() {
 #include <Adafruit_DRV2605.h>
 
 //////////////////// Pines / I2C ////////////////////
-#define SDA_PIN 22
-#define SCL_PIN 23
+#define SDA_PIN 6
+#define SCL_PIN 7
 
 Adafruit_DRV2605 drv;
 
@@ -146,4 +144,3 @@ void loop() {
   hapticMode1();
 
 }
-*/
