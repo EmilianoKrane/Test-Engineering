@@ -3,8 +3,8 @@
 #include "ue_i2c_icp_10111_sen.h"
 #include <Wire.h>
 
-#define SDA_PIN 22
-#define SCL_PIN 23
+#define SDA_PIN 6
+#define SCL_PIN 7
 
 ICP101xx sensor;
 

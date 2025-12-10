@@ -14,8 +14,8 @@
 
 // ==== Declaración de pines ====
 // Pines digitales
-#define SCL_PIN 21      // SCL pin D2
-#define SDA_PIN 20      // SDA pin D3
+#define SCL_OLED 5     // SCL pin D2
+#define SDA_OLED 4     // SDA pin D3
 #define DHT_PIN 9      // Pin DHT D4
 #define BUZZER_PIN 11  // GPIO11 D5 para Buzzer en Shield
 #define IR_PIN 8       // GPIO8 D6 LED Infrarrojo en Shield
@@ -27,8 +27,8 @@
 #define LED_D12 16     // GPIO16 D12 LED Rojo en Shield D12
 #define LED_D13 18     // GPIO16 D13 LED Azul en Shield D13
 
-//#define HAP_SDA 20  // GPIO I2C para Haptic Motor
-//#define HAP_SCL 21  // GPIO I2C para Haptic Motor
+#define HAP_SDA 20  // GPIO I2C para Haptic Motor
+#define HAP_SCL 21  // GPIO I2C para Haptic Motor
 
 #define LED_NEOP 24  // PIN DEDICADO AL NEOPIXEL WS2812
 #define LED_BUIL 25  // Led Builtin GPIO25
@@ -51,7 +51,9 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);     //
 Adafruit_DRV2605 drv;
 
 // ==== Declaración de variables
-String stateI2C;
+String status_OLED;
+String status_HapticM;
+
 String JSON_entrada;
 StaticJsonDocument<400> sendJSON;
 StaticJsonDocument<400> receiveJSON;
@@ -63,33 +65,41 @@ void setup() {
   Serial1.begin(115200);
   delay(500);
 
-  Wire.setSDA(SDA_PIN);
-  Wire.setSCL(SCL_PIN);
+  // ==== Inicialización de Haptic Motor ====
+  Wire.setSDA(HAP_SDA);
+  Wire.setSCL(HAP_SCL);
+  Wire.begin();  // Inicialización de I2C de HapticMotor
+
+  if (!drv.begin(&Wire)) {
+    Serial.println("No se encontró DRV2605 en I2C1!");
+    status_HapticM = "FAIL";
+  } else {
+    status_HapticM = "OK";
+  }
+
+
+  drv.selectLibrary(1);  // Librería de efectos
+  drv.useERM();          // ERM por defecto
+  drv.setMode(DRV2605_MODE_INTTRIG);
+  HapticMotor();
+  delay(500);
+  Wire.end();
+
+  // ==== Chequeo e inicialización de OLED por I2C ====
+  Wire.setSDA(SDA_OLED);
+  Wire.setSCL(SCL_OLED);
   Wire.begin();  // Inicialización de I2C de OLED
 
-  /*
-  Wire1.setSDA(HAP_SDA);
-  Wire1.setSCL(HAP_SCL);
-  Wire1.begin();  // Inicialización de I2C de HapticMotor
-  */
-
-
-  analogReadResolution(12);  // Inicialización Resolución del ADC
-  np.begin();                // Inicialización de objeto NeoPixel
-  dht.begin();               // Inicialización del DHT
-
-  // ==== Chequeo e inicialización de OLED por I2C
   if (!i2cCheckDevice(0x3C)) {
     Serial.println("SSD1306 no encontrada en I2C");
-    stateI2C = "FAIL";
+    status_OLED = "FAIL";
   } else {
     Serial.println("SSD1306 detectada");
     display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-    stateI2C = "OK";
+    status_OLED = "OK";
   }
 
   display.clearDisplay();
-  // Set text size and color
   display.setTextSize(1.5);
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(20, 0);
@@ -98,19 +108,12 @@ void setup() {
   display.println(F("MCU DualOne"));
   display.display();  // Show initial text
 
-  /*
-  // ==== Inicialización de Haptic Motor
-  if (!drv.begin(&Wire1)) {
-    Serial.println("No se encontró DRV2605 en I2C1!");
-  }
-  //drv.begin();           // Inicialización de HapticMotor
-  drv.selectLibrary(1);  // Librería de efectos
-  drv.useERM();          // ERM por defecto
-  drv.setMode(DRV2605_MODE_INTTRIG);
-*/
+  // ==== Inicialización de Sensores ====
+  analogReadResolution(12);  // Inicialización Resolución del ADC
+  np.begin();                // Inicialización de objeto NeoPixel
+  dht.begin();               // Inicialización del DHT
 
-
-  // ==== Declaración de GPIOs
+  // ==== Declaración de GPIOs ====
   // ==== Salidas
   pinMode(LED_BUIL, OUTPUT);    // Led Builtin GPIO25
   pinMode(BUZZER_PIN, OUTPUT);  // BUZZER D5
@@ -160,11 +163,10 @@ void loop() {
             display.display();
             // ==== Constructor OLED ====
 
-            // Validación D0 y D1
+            // Validación D0 y D1 OK UART
             // Validación D2 y D3 OLED
-            sendJSON["D2"] = stateI2C;
-            sendJSON["D3"] = stateI2C;
-
+            sendJSON["D2"] = status_OLED;
+            sendJSON["D3"] = status_OLED;
 
             // Validación D4 Sensor Hum Y Temp en Shield
             display.setCursor(0, 10);
@@ -193,9 +195,9 @@ void loop() {
 
             // Validación D9 - D11 RGB LED Shield
             // Validación D12 - D13 LEDs en Shield
-
-            //  Validación GPIOs 20 21 I2C
-            //HapticMotor();
+            // Validación de GPIOs 20 y 21
+            sendJSON["GPIO20"] = status_HapticM;
+            sendJSON["GPIO21"] = status_HapticM;
 
             // ==== VALIDACIÓN DE PINES ANALÓGICOS =====
             display.setCursor(60, 10);
@@ -230,7 +232,6 @@ void loop() {
             writeLCD("A3: " + statusA3, 0);
             sendJSON["A3"] = statusA3;
 
-
             serializeJson(sendJSON, Serial1);  // Envío de datos por JSON a la ESP32
             Serial1.println();
             break;
@@ -242,6 +243,7 @@ void loop() {
             melodyBuzzer();
             break;
           }
+          
       }
     }
   } else {
@@ -539,16 +541,12 @@ String sequenceDIG() {
 
 // Función de Haptic Motor GPIO20 y 21
 void HapticMotor() {
-  for (int i = 0; i < 10; i++) {
-    drv.setWaveform(0, 118);  // vibración fuerte
-    drv.setWaveform(1, 0);    // fin
-    drv.go();
-    delay(300);
-
-    drv.setWaveform(0, 47);  // pulso corto
-    drv.setWaveform(1, 0);
-    drv.go();
-  }
+  drv.setWaveform(0, 47);  // pulso corto
+  drv.setWaveform(1, 85);  // pulso corto
+  drv.setWaveform(2, 47);  // pulso corto
+  drv.setWaveform(3, 0);
+  drv.go();
+  delay(300);
 }
 
 
