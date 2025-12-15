@@ -9,8 +9,8 @@
 #include <ArduinoJson.h>
 
 // Pines para UART2 (puedes reasignarlos)
-#define RX2 15  // GPIO15 como RX
-#define TX2 19  // GPIO19 como TX
+#define RX2 15  // GPIO15 como RX D4
+#define TX2 19  // GPIO19 como TX D5
 
 // Pines para comunicación I2C con el sensor de corriente
 #define I2C_SDA 6
@@ -119,50 +119,30 @@ void loop() {
 
       // Llaves JSON de Ejecución de pruebas
       if (Function == "ON Rele") opc = 1;
-      else if (Function == "OFF Rele") opc = 5;
-
-      else if (Function == "Fuente ON") opc = 9;
-      else if (Function == "Fuente OFF") opc = 10;
-
+      else if (Function == "OFF Rele") opc = 2;
+      else if (Function == "Fuente ON") opc = 3;
+      else if (Function == "Fuente OFF") opc = 4;
 
       switch (opc) {
 
         case 1:
-          estadoRele = LOW; 
-          digitalWrite(signalRele, estadoRele);
-          break; 
-          /*
-          Serial.println("Ejecución de prueba de Cortocircuito");
-          enviarJSON.clear();  // Limpia cualquier dato previo
-
-          Serial.print("Corriente en Corto: ");
-          Serial.println(" A");
-
-
-          enviarJSON["Result"] = "1";  // Envio de corriente JSON para corto
-
-
-          JSONCorriente = String(5) + " A";            // Empaquetamiento
-          enviarJSON["LecturaCorto"] = JSONCorriente;  // Envio de corriente JSON para corto
-          serializeJson(enviarJSON, PagWeb);           // Envío de datos por JSON a la PagWeb
-          PagWeb.println();                            // Salto de línea para delimitar
-
-          Serial.println("Fin de la prueba de corto");
-          break;
-          */
-
-        case 5:
-          estadoRele = HIGH; 
+          estadoRele = LOW;
+          Serial.println("RelayOn"); 
           digitalWrite(signalRele, estadoRele);
           break;
 
+        case 2:
+          estadoRele = HIGH;
+          Serial.println("RelayOff"); 
+          digitalWrite(signalRele, estadoRele);
+          break;
 
-        case 9:
+        case 3:
           digitalWrite(RELAYA, LOW);  // Activo
           digitalWrite(RELAYB, LOW);  // Activo
           break;
 
-        case 10:
+        case 4:
           digitalWrite(RELAYA, HIGH);
           digitalWrite(RELAYB, HIGH);
           break;

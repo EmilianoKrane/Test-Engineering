@@ -41,7 +41,7 @@
 #define RELAYCom 20
 
 // Relevadores de Accionamiento de Fuente
-#define RELAYA 8 //Problema no agarra 
+#define RELAYA 8  //Problema no agarra
 #define RELAYB 9
 
 // Relevadores de Inv Polaridad
@@ -138,6 +138,22 @@ void loop() {
       else if (Function == "COM OFF") opc = 8;
       else if (Function == "Carga Bat") opc = 9;
 
+      /*
+      {"Function":"Cortocircuito"}
+      {"Function":"Polaridad"}
+
+      {"Function":"Lectura Nom"}
+      {"Function":"lectura Break"}
+
+      {"Function":"Fuente ON"}
+      {"Function":"Fuente OFF"}
+
+      {"Function":"COM ON"}
+      {"Function":"COM OFF"}
+
+      {"Function":"Carga Bat"}
+      */
+
       switch (opc) {
 
         // Prueba de cortocircuito
@@ -151,7 +167,7 @@ void loop() {
           digitalWrite(RELAY3, LOW);  // Activo
           digitalWrite(RELAY4, LOW);  // Activo
 
-          for (int i = 1; i <= 50; i++) {
+          for (int i = 0; i < 50; i++) {
             float valorActual = medirCorriente();
             Serial.println(valorActual);
 
@@ -168,11 +184,13 @@ void loop() {
           Serial.println(" A");
 
           if (fabs(valueMax) > 5.5) {
-            enviarJSON["Result"] = "1";  // Envio de corriente JSON para corto
+            enviarJSON["status"] = "OK";
+          } else {
+            enviarJSON["status"] = "Fail";
           }
 
-          JSONCorriente = String(valueMax, 3) + " A";  // Empaquetamiento
-          enviarJSON["LecturaCorto"] = JSONCorriente;  // Envio de corriente JSON para corto
+          JSONCorriente = String(valueMax, 1) + " A";  // Empaquetamiento
+          enviarJSON["meas"] = JSONCorriente;          // Envio de corriente JSON para corto
           serializeJson(enviarJSON, PagWeb);           // Envío de datos por JSON a la PagWeb
           PagWeb.println();                            // Salto de línea para delimitar
 
@@ -200,11 +218,13 @@ void loop() {
           Serial.println(" A");
 
           if (fabs(corrienteSensor) < 0.1) {
-            enviarJSON["Result"] = "1";  // Envio de corriente JSON para corto
+            enviarJSON["status"] = "OK";
+          } else {
+            enviarJSON["status"] = "Fail";
           }
 
-          JSONCorriente = String(corrienteSensor, 3) + " A";  // Empaquetamiento
-          enviarJSON["LecturaPolaridad"] = JSONCorriente;     // Envio de corriente JSON para corto
+          JSONCorriente = String(corrienteSensor, 1) + " A";  // Empaquetamiento
+          enviarJSON["meas"] = JSONCorriente;                 // Envio de corriente JSON para corto
           serializeJson(enviarJSON, PagWeb);                  // Envío de datos por JSON a la PagWeb
           PagWeb.println();                                   // Salto de línea para delimitar
 
@@ -225,11 +245,13 @@ void loop() {
           Serial.println(" A");
 
           if (corrienteSensor > 2) {
-            enviarJSON["Result"] = "1";  // Envio de corriente JSON para corto
+            enviarJSON["status"] = "OK";  // Envio de corriente JSON para corto
+          } else {
+            enviarJSON["status"] = "Fail";
           }
 
-          JSONCorriente = String(corrienteSensor, 3) + " A";  // Empaquetamiento
-          enviarJSON["LecturaNominal"] = JSONCorriente;       // Envio de corriente JSON para corto
+          JSONCorriente = String(corrienteSensor, 1) + " A";  // Empaquetamiento
+          enviarJSON["meas"] = JSONCorriente;                 // Envio de corriente JSON para corto
           serializeJson(enviarJSON, PagWeb);                  // Envío de datos por JSON a la PagWeb
           PagWeb.println();                                   // Salto de línea para delimitar
           break;
@@ -247,12 +269,14 @@ void loop() {
           Serial.print(corrienteSensor, 3);
           Serial.println(" A");
 
-          if (fabs(corrienteSensor) < 1) {
-            enviarJSON["Result"] = "1";  // Envio de corriente JSON para corto
+          if (fabs(corrienteSensor) < 0.2) {
+            enviarJSON["status"] = "OK";
+          } else {
+            enviarJSON["status"] = "Fail";
           }
 
-          JSONCorriente = String(corrienteSensor, 3) + " A";  // Empaquetamiento
-          enviarJSON["LecturaBreak"] = JSONCorriente;         // Envio de corriente JSON para corto
+          JSONCorriente = String(corrienteSensor, 1) + " A";  // Empaquetamiento
+          enviarJSON["meas"] = JSONCorriente;                 // Envio de corriente JSON para corto
           serializeJson(enviarJSON, PagWeb);                  // Envío de datos por JSON a la PagWeb
           PagWeb.println();                                   // Salto de línea para delimitar
           break;
@@ -279,6 +303,8 @@ void loop() {
           digitalWrite(RELAYCom, HIGH);
           enviarJSON.clear();  // Limpia cualquier dato previo
 
+          bool flagBat = true;
+
           for (int i = 0; i < 10; i++) {
             float corriente = medirCorriente();
             Serial.print("Medición ");
@@ -287,13 +313,25 @@ void loop() {
             Serial.println(corriente);
 
             if (corriente < -0.1) {
-              enviarJSON["Result"] = "1";         // Envio de corriente JSON para corto
-              serializeJson(enviarJSON, PagWeb);  // Envío de datos por JSON a la PagWeb
-              PagWeb.println();                   // Salto de línea para delimitar
-              break;                              // salir del for inmediatamente
+              flagBat = false;
+              enviarJSON["status"] = "OK";                  // Envio de corriente JSON
+              JSONCorriente = String(corriente, 1) + " A";  // Empaquetamiento
+              enviarJSON["meas"] = JSONCorriente;           // Envio de corriente JSON
+              serializeJson(enviarJSON, PagWeb);            // Envío de datos por JSON a la PagWeb
+              PagWeb.println();                             // Salto de línea para delimitar
+              break;                                        // salir del for inmediatamente
             }
 
-            delay(500);
+            delay(50);
+          }
+
+          if (flagBat) {
+            float corriente = medirCorriente();
+            enviarJSON["status"] = "Fail";                // Envio de corriente JSON
+            JSONCorriente = String(corriente, 1) + " A";  // Empaquetamiento
+            enviarJSON["meas"] = JSONCorriente;           // Envio de corriente JSON
+            serializeJson(enviarJSON, PagWeb);            // Envío de datos por JSON a la PagWeb
+            PagWeb.println();                             // Salto de línea para delimitar
           }
 
           break;
