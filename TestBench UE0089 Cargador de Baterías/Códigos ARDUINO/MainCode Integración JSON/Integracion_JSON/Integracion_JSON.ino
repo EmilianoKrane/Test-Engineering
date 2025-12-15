@@ -1,6 +1,4 @@
 // Código Final Integrado para LM2596  entre PagWeb y Pulsar ESP32-C6
-// Código en el que estoy trabjando ahorita, acuerdateeeee 170925
-
 
 // --- BIBLIOTECAS ---
 #include <Wire.h>
