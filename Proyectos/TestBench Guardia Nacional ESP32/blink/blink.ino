@@ -1,3 +1,4 @@
+
 // MainCode TestPruebas ATMega328p Guardia Nacional DIS
 
 #include <Wire.h>
@@ -134,6 +135,10 @@ void loop() {
             // Validación de interrupción por switch en PD2 D2
             // Incluir buzzer por PD4 para validar
             bool statusINT = false;
+
+
+
+
             /*
             for (int i = 0; i < 50; i++) {
 
@@ -152,6 +157,7 @@ void loop() {
             }
             */
 
+
             if (digitalRead(SWITCH) == LOW) {
               enviarJSON["sw"] = "OK";
               statusINT = true;
@@ -162,7 +168,7 @@ void loop() {
             }
 
             // Validación PD4 a Ventilador
-            melodyBuzzer();
+            //melodyBuzzer();
 
 
             serializeJson(enviarJSON, Serial);  // Envío de datos por JSON a la PagWeb
@@ -193,7 +199,7 @@ void loop() {
       }
     }
   } else {
-    sequenceNeop();
+    //sequenceNeop();
   }
 }
 

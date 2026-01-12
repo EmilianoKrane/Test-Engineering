@@ -93,7 +93,7 @@
 
 #define REST 0
 
-int buzzer = 5;
+int buzzer = 6;
 
 int melody[] = {
   NOTE_E7, NOTE_E7, REST, NOTE_E7,

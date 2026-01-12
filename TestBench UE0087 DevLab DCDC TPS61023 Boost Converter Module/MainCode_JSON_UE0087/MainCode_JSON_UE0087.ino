@@ -10,6 +10,8 @@
 #define RX2 D4  // GPIO15 como RX
 #define TX2 D5  // GPIO19 como TX
 
+#define RUN_BUTTON 4  // Botón de Arranque
+
 // Pines para comunicación I2C con el sensor de corriente
 #define I2C_SDA 6
 #define I2C_SCL 7
@@ -35,7 +37,7 @@ HardwareSerial PagWeb(1);  // Crear objeto para UART2 en PULSAR como PagWeb
 // Comunicación I2C
 TwoWire I2CBus = TwoWire(0);
 Adafruit_INA219 ina219_in(0x40);
-Adafruit_INA219 ina219_out(0x40); //41
+Adafruit_INA219 ina219_out(0x41);  //41
 
 const float shuntOffset_mV = 0.0;  // Offset en vacío para lectura inicial
 const float R_SHUNT = 0.05;        // Resistencia Shunt = 50 mΩ
@@ -75,10 +77,12 @@ void setup() {
   pinMode(RELAY3, OUTPUT);
   pinMode(RELAY4, OUTPUT);
 
+  pinMode(RUN_BUTTON, INPUT);
+
   // Apagar todos los relés al inicio (HIGH = apagado)
   digitalWrite(RELAYCom, LOW);
-  digitalWrite(RELAYA, HIGH);
-  digitalWrite(RELAYB, HIGH);
+  digitalWrite(RELAYA, LOW);
+  digitalWrite(RELAYB, LOW);
   digitalWrite(RELAY1, HIGH);
   digitalWrite(RELAY2, HIGH);
   digitalWrite(RELAY3, HIGH);
@@ -89,6 +93,20 @@ void setup() {
 
 
 void loop() {
+
+  if (digitalRead(RUN_BUTTON) == HIGH) {
+    delay(200);
+    enviarJSON.clear();  // Limpia cualquier dato previo
+
+    if (digitalRead(RUN_BUTTON) == LOW) {
+      Serial.println("Arranque por botonera"); 
+      enviarJSON["Run"] = "OK";  // Envio de corriente JSON para corto
+      serializeJson(enviarJSON, PagWeb);           // Envío de datos por JSON a la PagWeb
+      PagWeb.println();
+    }
+  }
+
+
   //  Accionamiento desde PagWeb
   if (PagWeb.available()) {
 
@@ -118,6 +136,9 @@ void loop() {
 
         // Lectura de corriente
         case 1:
+          digitalWrite(RELAYA, LOW);
+          digitalWrite(RELAYB, LOW);
+          delay(50);
           Serial.println("Lectura de corriente a la salida");
           enviarJSON.clear();  // Limpia cualquier dato previo
 
@@ -130,14 +151,12 @@ void loop() {
             if (valorActual > valueMax) {
               valueMax = valorActual;
             }
-            delay(50); 
+            delay(50);
           }
 
           Serial.print("Corriente nominal: ");
           Serial.print(valueMax, 3);
           Serial.println(" A");
-          
-          valueMax = 0.95; // BORRAR
 
           if (fabs(valueMax) > 0.8 && fabs(valueMax) < 1.5) {
             enviarJSON["status"] = "OK";
@@ -150,7 +169,7 @@ void loop() {
           serializeJson(enviarJSON, PagWeb);           // Envío de datos por JSON a la PagWeb
           PagWeb.println();                            // Salto de línea para delimitar
 
-          Serial.println("Fin de la prueba de corto");
+
           break;
 
         case 2:
@@ -159,8 +178,8 @@ void loop() {
           break;
 
         case 3:
-          digitalWrite(RELAYA, HIGH);
-          digitalWrite(RELAYB, HIGH);
+          digitalWrite(RELAYA, LOW);
+          digitalWrite(RELAYB, LOW);
           break;
       }
     }

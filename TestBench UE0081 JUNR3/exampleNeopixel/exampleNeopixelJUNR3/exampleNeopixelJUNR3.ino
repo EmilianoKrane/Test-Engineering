@@ -3,7 +3,7 @@
 #define PIN 8
 #define LED_BUILTIN 13
 
-#define NUMPIXELS 25
+#define NUMPIXELS 1
 #define DELAYVAL 50
 
 Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
