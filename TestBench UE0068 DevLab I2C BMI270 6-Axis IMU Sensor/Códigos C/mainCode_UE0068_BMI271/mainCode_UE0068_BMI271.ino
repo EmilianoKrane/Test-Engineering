@@ -72,13 +72,17 @@ void loop() {
             Serial.println("==== Escaneo y lectura SPI ====");
             SPI.begin(SCL_PIN, D1, SDA_PIN, D0);
 
-            while (imu.beginSPI(chipSelectPin, clockFrequency) != BMI2_OK) {
-              Serial.println("Error: BMI270 not connected, check wiring and CS pin!");
-              delay(500);
-            }
-
-            for (int i = 0; i < 10; i++) {
-              readIMU();
+            for (int i = 0; i < 50; i++) {
+              if (imu.beginSPI(chipSelectPin, clockFrequency) != BMI2_OK) {
+                Serial.println("Error: BMI270 not connected, check wiring and CS pin!");
+              } else {
+                // Inicialización del sensor en SPI
+                for (int i = 0; i < 10; i++) {
+                  readIMU();
+                  delay(50);
+                }
+                return;
+              }
               delay(50);
             }
 
@@ -97,39 +101,51 @@ void loop() {
   }
 }
 
+
 void readIMU() {
 
   imu.getSensorData();
 
-  // Print acceleration data
-  Serial.print("Acceleration in g's");
-  Serial.print("\t");
+  Serial.print("ACC [g]  ");
   Serial.print("X: ");
   Serial.print(imu.data.accelX, 3);
-  Serial.print("\t");
+  Serial.print("   ");
+
   Serial.print("Y: ");
   Serial.print(imu.data.accelY, 3);
-  Serial.print("\t");
+  Serial.print("   ");
+
   Serial.print("Z: ");
   Serial.print(imu.data.accelZ, 3);
+  Serial.print("   |   ");
 
-  Serial.print("\t");
-
-  // Print rotation data
-  Serial.print("Rotation in deg/sec");
-  Serial.print("\t");
+  Serial.print("GYR [dps]  ");
   Serial.print("X: ");
   Serial.print(imu.data.gyroX, 3);
-  Serial.print("\t");
+  Serial.print("   ");
+
   Serial.print("Y: ");
   Serial.print(imu.data.gyroY, 3);
-  Serial.print("\t");
+  Serial.print("   ");
+
   Serial.print("Z: ");
   Serial.println(imu.data.gyroZ, 3);
 
-  // Print 50x per second
+
+  sendJSON["accelX"] = imu.data.accelX;
+  sendJSON["accelY"] = imu.data.accelY;
+  sendJSON["accelZ"] = imu.data.accelZ;
+
+  sendJSON["gyroX"]  = imu.data.gyroX;
+  sendJSON["gyroY"]  = imu.data.gyroY;
+  sendJSON["gyroZ"]  = imu.data.gyroZ;
+
+  serializeJson(sendJSON, PagWeb);
+  PagWeb.println();
+
   delay(100);
 }
+
 
 
 String scanI2C(int sw) {
