@@ -1,15 +1,29 @@
 #include <SPI.h>
 #include "SparkFun_BMI270_Arduino_Library.h"
+#include <HardwareSerial.h>
+#include <ArduinoJson.h>
+
+// ==== Declaración de pines
+#define RX2 D4  // GPIO15 como RX
+#define TX2 D5  // GPIO19 como TX
 
 #define SDA_PIN 6   // MOSI
 #define SCL_PIN 7   // SCl
-#define PIN_SDO D1  // MISO
-#define PIN_CS D0
+#define SDO_PIN D1  // MISO
+#define CS_PIN D0
 
-// Create a new sensor object
+// ==== Inicialización de objetos
+HardwareSerial PagWeb(1);  // Objeto para UART2 en PULSAR como PagWeb
 BMI270 imu;
 
-// SPI parameters
+// Variables de JSON
+String JSON_entrada;  // Variable que recibe al JSON en crudo de PagWeb
+StaticJsonDocument<200> receiveJSON;
+
+String JSON_corriente;  // Variable que envía el JSON de datos
+StaticJsonDocument<200> sendJSON;
+
+// Parámetros de SPI
 uint8_t chipSelectPin = D0;
 uint32_t clockFrequency = 100000;
 
@@ -18,37 +32,14 @@ void setup() {
   Serial.begin(115200);
   Serial.println("BMI270 Example 2 - Basic Readings SPI");
 
-  pinMode(PIN_CS, INPUT);
-  pinMode(PIN_SDO, OUTPUT);
+  pinMode(CS_PIN, INPUT);
+  pinMode(SDO_PIN, OUTPUT);
 
-  digitalWrite(PIN_SDO, LOW);  // LOW = 0x68 || HIGH = 0x69
+  String scan1 = scanI2C(68);
+  Serial.println("Escaneo LOW: " + scan1);
 
-  Wire.begin(SDA_PIN, SCL_PIN);
-  Serial.println("I2C scan starting...");
-
-  for (uint8_t addr = 1; addr < 127; addr++) {
-    Wire.beginTransmission(addr);
-    if (Wire.endTransmission() == 0) {
-      Serial.print("I2C device found at 0x");
-      if (addr < 16) Serial.print("0");
-      Serial.println(addr, HEX);
-    }
-  }
-
-
-  digitalWrite(PIN_SDO, HIGH);  // LOW = 0x68 || HIGH = 0x69
-
-  Wire.begin(SDA_PIN, SCL_PIN);
-  Serial.println("I2C scan starting...");
-
-  for (uint8_t addr = 1; addr < 127; addr++) {
-    Wire.beginTransmission(addr);
-    if (Wire.endTransmission() == 0) {
-      Serial.print("I2C device found at 0x");
-      if (addr < 16) Serial.print("0");
-      Serial.println(addr, HEX);
-    }
-  }
+  String scan2 = scanI2C(69);
+  Serial.println("Escaneo HIGH: " + scan2);
 
   Serial.println("I2C scan done");
   delay(10000);
@@ -56,11 +47,12 @@ void setup() {
   // Initialize the SPI library
   // void begin(int8_t sck = -1, int8_t miso = -1, int8_t mosi = -1, int8_t ss = -1);
   SPI.begin(7, D1, 6, D0);
-  pinMode(PIN_CS, OUTPUT);
-  digitalWrite(PIN_CS, LOW);
+  pinMode(CS_PIN, OUTPUT);
+  digitalWrite(CS_PIN, LOW);
 
   // Check if sensor is connected and initialize
   // Clock frequency is optional (defaults to 100kHz)
+  /*
   while (imu.beginSPI(chipSelectPin, clockFrequency) != BMI2_OK) {
     // Not connected, inform user
     Serial.println("Error: BMI270 not connected, check wiring and CS pin!");
@@ -70,11 +62,18 @@ void setup() {
   }
 
   Serial.println("BMI270 connected!");
+  */
 }
 
 void loop() {
-  // Get measurements from the sensor. This must be called before accessing
-  // the sensor data, otherwise it will never update
+
+
+
+  
+}
+
+void readIMU() {
+
   imu.getSensorData();
 
   // Print acceleration data
@@ -107,38 +106,34 @@ void loop() {
   delay(100);
 }
 
+String scanI2C(int sw) {
 
-void runTestSequence() {
+  String addressI2C = "";
 
-  Serial.println("=== I2C TEST START ===");
-
-  // ---------- I2C MODE ----------
-  pinMode(PIN_CS, INPUT);   // SPI off
-  pinMode(PIN_SDO, INPUT);  // Hi-Z (CLAVE)
+  if (sw == 68) {
+    digitalWrite(SDO_PIN, LOW);  // LOW = 0x68 || HIGH = 0x69
+  } else if (sw == 69) {
+    digitalWrite(SDO_PIN, HIGH);
+  } else {
+    digitalWrite(SDO_PIN, LOW);
+  }
 
   Wire.begin(SDA_PIN, SCL_PIN);
-  delay(10);
+  //Serial.println("Inicio de escáner I2C...");
 
-  Serial.println("I2C scan (SDO LOW / HIGH via HW)");
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      //Serial.print("Dispositivo encontrado en 0x");
+      if (addr < 16) Serial.print("0");
+      //Serial.println(addr, HEX);
 
-
-  // ---------- STOP I2C ----------
-  Wire.end();
-  pinMode(SDA_PIN, INPUT);
-  pinMode(SCL_PIN, INPUT);
-
-  delay(10);
-
-  // ---------- SPI MODE ----------
-  Serial.println("Switching to SPI");
-
-  SPI.begin(7, D1, 6, D0);
-  pinMode(PIN_CS, OUTPUT);
-  digitalWrite(PIN_CS, LOW);
-
-  if (imu.beginSPI(chipSelectPin, clockFrequency) == BMI2_OK) {
-    Serial.println("BMI270 SPI OK");
-  } else {
-    Serial.println("BMI270 SPI FAIL");
+      addressI2C += "0x";
+      if (addr < 16) addressI2C += "0";
+      addressI2C += String(addr, HEX);
+      addressI2C += " ";
+    }
   }
+
+  return addressI2C;
 }
