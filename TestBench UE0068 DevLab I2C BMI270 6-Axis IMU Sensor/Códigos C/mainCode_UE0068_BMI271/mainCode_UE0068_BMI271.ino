@@ -1,4 +1,3 @@
-#include <Wire.h>
 #include <SPI.h>
 #include "SparkFun_BMI270_Arduino_Library.h"
 
@@ -13,9 +12,6 @@ BMI270 imu;
 // SPI parameters
 uint8_t chipSelectPin = D0;
 uint32_t clockFrequency = 100000;
-
-bool runSequence = false;
-char cmd;
 
 void setup() {
   // Start serial
@@ -77,25 +73,38 @@ void setup() {
 }
 
 void loop() {
-  if (Serial.available()) {
-    cmd = Serial.read();
-    if (cmd == 'a') {
-      runSequence = true;
-    }
-  }
+  // Get measurements from the sensor. This must be called before accessing
+  // the sensor data, otherwise it will never update
+  imu.getSensorData();
 
-  if (runSequence) {
-    runSequence = false;
-    runTestSequence();
-  }
+  // Print acceleration data
+  Serial.print("Acceleration in g's");
+  Serial.print("\t");
+  Serial.print("X: ");
+  Serial.print(imu.data.accelX, 3);
+  Serial.print("\t");
+  Serial.print("Y: ");
+  Serial.print(imu.data.accelY, 3);
+  Serial.print("\t");
+  Serial.print("Z: ");
+  Serial.print(imu.data.accelZ, 3);
 
-  // SPI read continuo (opcional)
-  if (imu.isInitialized()) {
-    imu.getSensorData();
-    Serial.print("AX: ");
-    Serial.println(imu.data.accelX, 3);
-    delay(100);
-  }
+  Serial.print("\t");
+
+  // Print rotation data
+  Serial.print("Rotation in deg/sec");
+  Serial.print("\t");
+  Serial.print("X: ");
+  Serial.print(imu.data.gyroX, 3);
+  Serial.print("\t");
+  Serial.print("Y: ");
+  Serial.print(imu.data.gyroY, 3);
+  Serial.print("\t");
+  Serial.print("Z: ");
+  Serial.println(imu.data.gyroZ, 3);
+
+  // Print 50x per second
+  delay(100);
 }
 
 
@@ -111,7 +120,7 @@ void runTestSequence() {
   delay(10);
 
   Serial.println("I2C scan (SDO LOW / HIGH via HW)");
-  scanI2C();
+
 
   // ---------- STOP I2C ----------
   Wire.end();
