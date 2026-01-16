@@ -1,117 +1,108 @@
-/*
-Código principal de UE0068 
-*/
-
-
-#include <Wire.h>
 #include <SPI.h>
 #include "SparkFun_BMI270_Arduino_Library.h"
 
-#define SDA_PIN 6
-#define SCL_PIN 7
-#define MOSI_PIN 6
-#define MISO_PIN D1
-#define SCK_PIN 7
+#define SDA_PIN 6   // MOSI
+#define SCL_PIN 7   // SCl
+#define PIN_SDO D1  // MISO
+#define PIN_CS D0
 
-#define SDO_PIN D1
-#define CS_PIN D0
-
-uint8_t addr_imu_1 = BMI2_I2C_PRIM_ADDR;  // 0x68
-uint8_t addr_imu_2 = BMI2_I2C_SEC_ADDR;   // 0x69
-
-char cmd = 'a';          // 'a' = I2C 0x68 | 'b' = I2C 0x69 | 'c' = SPI
-char last_cmd = 0;
-bool imu_ok = false;
-
+// Create a new sensor object
 BMI270 imu;
 
+// SPI parameters
+uint8_t chipSelectPin = D0;
+uint32_t clockFrequency = 100000;
 
 void setup() {
+  // Start serial
   Serial.begin(115200);
+  Serial.println("BMI270 Example 2 - Basic Readings SPI");
 
-  pinMode(CS_PIN, OUTPUT);
-  pinMode(SDO_PIN, OUTPUT);
+  pinMode(PIN_CS, INPUT);
+  pinMode(PIN_SDO, OUTPUT);
+
+  digitalWrite(PIN_SDO, LOW);  // LOW = 0x68 || HIGH = 0x69
 
   Wire.begin(SDA_PIN, SCL_PIN);
-  SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN, CS_PIN);
+  Serial.println("I2C scan starting...");
 
-  digitalWrite(CS_PIN, HIGH);  // Default I2C
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      Serial.print("I2C device found at 0x");
+      if (addr < 16) Serial.print("0");
+      Serial.println(addr, HEX);
+    }
+  }
 
-  Serial.println("BMI270 Hybrid I2C / SPI");
+
+  digitalWrite(PIN_SDO, HIGH);  // LOW = 0x68 || HIGH = 0x69
+
+  Wire.begin(SDA_PIN, SCL_PIN);
+  Serial.println("I2C scan starting...");
+
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      Serial.print("I2C device found at 0x");
+      if (addr < 16) Serial.print("0");
+      Serial.println(addr, HEX);
+    }
+  }
+
+  Serial.println("I2C scan done");
+  delay(10000);
+
+  // Initialize the SPI library
+  // void begin(int8_t sck = -1, int8_t miso = -1, int8_t mosi = -1, int8_t ss = -1);
+  SPI.begin(7, D1, 6, D0);
+  pinMode(PIN_CS, OUTPUT);
+  digitalWrite(PIN_CS, LOW);
+
+  // Check if sensor is connected and initialize
+  // Clock frequency is optional (defaults to 100kHz)
+  while (imu.beginSPI(chipSelectPin, clockFrequency) != BMI2_OK) {
+    // Not connected, inform user
+    Serial.println("Error: BMI270 not connected, check wiring and CS pin!");
+
+    // Wait a bit to see if connection is established
+    delay(1000);
+  }
+
+  Serial.println("BMI270 connected!");
 }
-
 
 void loop() {
-
-  // Leer comando por Serial
-  if (Serial.available()) {
-    cmd = Serial.read();
-  }
-
-  // Si cambia el comando → reinicializar
-  if (cmd != last_cmd) {
-    initIMU(cmd);
-    last_cmd = cmd;
-    delay(100);
-  }
-
-  if (!imu_ok) return;
-
+  // Get measurements from the sensor. This must be called before accessing
+  // the sensor data, otherwise it will never update
   imu.getSensorData();
 
-  Serial.print("A[g] ");
+  // Print acceleration data
+  Serial.print("Acceleration in g's");
+  Serial.print("\t");
+  Serial.print("X: ");
   Serial.print(imu.data.accelX, 3);
-  Serial.print(", ");
+  Serial.print("\t");
+  Serial.print("Y: ");
   Serial.print(imu.data.accelY, 3);
-  Serial.print(", ");
+  Serial.print("\t");
+  Serial.print("Z: ");
   Serial.print(imu.data.accelZ, 3);
 
-  Serial.print(" | G[dps] ");
+  Serial.print("\t");
+
+  // Print rotation data
+  Serial.print("Rotation in deg/sec");
+  Serial.print("\t");
+  Serial.print("X: ");
   Serial.print(imu.data.gyroX, 3);
-  Serial.print(", ");
+  Serial.print("\t");
+  Serial.print("Y: ");
   Serial.print(imu.data.gyroY, 3);
-  Serial.print(", ");
+  Serial.print("\t");
+  Serial.print("Z: ");
   Serial.println(imu.data.gyroZ, 3);
 
-  delay(50);
-}
-
-
-
-
-void initIMU(char mode) {
-  imu_ok = false;
-
-  if (mode == 'a') {
-    Serial.println("Modo I2C 0x68");
-    digitalWrite(CS_PIN, HIGH);
-    digitalWrite(SDO_PIN, LOW);
-
-    if (imu.beginI2C(addr_imu_1, Wire) == BMI2_OK) {
-      imu_ok = true;
-    }
-  }
-
-  else if (mode == 'b') {
-    Serial.println("Modo I2C 0x69");
-    digitalWrite(CS_PIN, HIGH);
-    digitalWrite(SDO_PIN, HIGH);
-
-    if (imu.beginI2C(addr_imu_2, Wire) == BMI2_OK) {
-      imu_ok = true;
-    }
-  }
-
-  else if (mode == 'c') {
-    Serial.println("Modo SPI");
-    digitalWrite(CS_PIN, LOW);
-
-    if (imu.beginSPI(CS_PIN, 100000) == BMI2_OK) {
-      imu_ok = true;
-    }
-  }
-
-  if (!imu_ok) {
-    Serial.println("Error inicializando BMI270");
-  }
+  // Print 50x per second
+  delay(100);
 }
