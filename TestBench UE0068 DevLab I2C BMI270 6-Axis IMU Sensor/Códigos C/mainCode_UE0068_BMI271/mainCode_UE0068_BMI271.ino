@@ -1,3 +1,4 @@
+#include <Wire.h>
 #include <SPI.h>
 #include "SparkFun_BMI270_Arduino_Library.h"
 
@@ -12,6 +13,9 @@ BMI270 imu;
 // SPI parameters
 uint8_t chipSelectPin = D0;
 uint32_t clockFrequency = 100000;
+
+bool runSequence = false;
+char cmd;
 
 void setup() {
   // Start serial
@@ -73,36 +77,59 @@ void setup() {
 }
 
 void loop() {
-  // Get measurements from the sensor. This must be called before accessing
-  // the sensor data, otherwise it will never update
-  imu.getSensorData();
+  if (Serial.available()) {
+    cmd = Serial.read();
+    if (cmd == 'a') {
+      runSequence = true;
+    }
+  }
 
-  // Print acceleration data
-  Serial.print("Acceleration in g's");
-  Serial.print("\t");
-  Serial.print("X: ");
-  Serial.print(imu.data.accelX, 3);
-  Serial.print("\t");
-  Serial.print("Y: ");
-  Serial.print(imu.data.accelY, 3);
-  Serial.print("\t");
-  Serial.print("Z: ");
-  Serial.print(imu.data.accelZ, 3);
+  if (runSequence) {
+    runSequence = false;
+    runTestSequence();
+  }
 
-  Serial.print("\t");
+  // SPI read continuo (opcional)
+  if (imu.isInitialized()) {
+    imu.getSensorData();
+    Serial.print("AX: ");
+    Serial.println(imu.data.accelX, 3);
+    delay(100);
+  }
+}
 
-  // Print rotation data
-  Serial.print("Rotation in deg/sec");
-  Serial.print("\t");
-  Serial.print("X: ");
-  Serial.print(imu.data.gyroX, 3);
-  Serial.print("\t");
-  Serial.print("Y: ");
-  Serial.print(imu.data.gyroY, 3);
-  Serial.print("\t");
-  Serial.print("Z: ");
-  Serial.println(imu.data.gyroZ, 3);
 
-  // Print 50x per second
-  delay(100);
+void runTestSequence() {
+
+  Serial.println("=== I2C TEST START ===");
+
+  // ---------- I2C MODE ----------
+  pinMode(PIN_CS, INPUT);   // SPI off
+  pinMode(PIN_SDO, INPUT);  // Hi-Z (CLAVE)
+
+  Wire.begin(SDA_PIN, SCL_PIN);
+  delay(10);
+
+  Serial.println("I2C scan (SDO LOW / HIGH via HW)");
+  scanI2C();
+
+  // ---------- STOP I2C ----------
+  Wire.end();
+  pinMode(SDA_PIN, INPUT);
+  pinMode(SCL_PIN, INPUT);
+
+  delay(10);
+
+  // ---------- SPI MODE ----------
+  Serial.println("Switching to SPI");
+
+  SPI.begin(7, D1, 6, D0);
+  pinMode(PIN_CS, OUTPUT);
+  digitalWrite(PIN_CS, LOW);
+
+  if (imu.beginSPI(chipSelectPin, clockFrequency) == BMI2_OK) {
+    Serial.println("BMI270 SPI OK");
+  } else {
+    Serial.println("BMI270 SPI FAIL");
+  }
 }
