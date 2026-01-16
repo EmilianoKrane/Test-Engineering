@@ -35,29 +35,6 @@ void setup() {
   PagWeb.begin(115200, SERIAL_8N1, RX2, TX2);
 
   Serial.println("MainCode JSON BMI270");
-
-  pinMode(CS_PIN, INPUT);
-  pinMode(SDO_PIN, OUTPUT);
-
-  // Initialize the SPI library
-  // void begin(int8_t sck = -1, int8_t miso = -1, int8_t mosi = -1, int8_t ss = -1);
-  SPI.begin(7, D1, 6, D0);
-  pinMode(CS_PIN, OUTPUT);
-  digitalWrite(CS_PIN, LOW);
-
-  // Check if sensor is connected and initialize
-  // Clock frequency is optional (defaults to 100kHz)
-  /*
-  while (imu.beginSPI(chipSelectPin, clockFrequency) != BMI2_OK) {
-    // Not connected, inform user
-    Serial.println("Error: BMI270 not connected, check wiring and CS pin!");
-
-    // Wait a bit to see if connection is established
-    delay(1000);
-  }
-
-  Serial.println("BMI270 connected!");
-  */
 }
 
 void loop() {
@@ -72,8 +49,8 @@ void loop() {
 
       int opc = 0;
 
-      if (Function == "scan") opc = 1;  // {"Function":"scan"}
-      else if (Function == "SPI") opc = 2;
+      if (Function == "scan") opc = 1;       // {"Function":"scan"}
+      else if (Function == "SPI") opc = 2;   // {"Function":"SPI"}
       else if (Function == "ping") opc = 3;  // {"Function":"ping"}
 
       switch (opc) {
@@ -90,6 +67,20 @@ void loop() {
 
         case 2:
           {
+            // Initialize the SPI library
+            // void begin(int8_t sck = -1, int8_t miso = -1, int8_t mosi = -1, int8_t ss = -1);
+            Serial.println("==== Escaneo y lectura SPI ====");
+            SPI.begin(SCL_PIN, D1, SDA_PIN, D0);
+
+            while (imu.beginSPI(chipSelectPin, clockFrequency) != BMI2_OK) {
+              Serial.println("Error: BMI270 not connected, check wiring and CS pin!");
+              delay(500);
+            }
+
+            for (int i = 0; i < 10; i++) {
+              readIMU();
+              delay(50);
+            }
 
             break;
           }
@@ -145,6 +136,9 @@ String scanI2C(int sw) {
 
   String addressI2C = "";
 
+  pinMode(CS_PIN, INPUT);
+  pinMode(SDO_PIN, OUTPUT);
+
   if (sw == 68) {
     digitalWrite(SDO_PIN, LOW);  // LOW = 0x68 || HIGH = 0x69
   } else if (sw == 69) {
@@ -185,6 +179,7 @@ String scanI2C(int sw) {
     }
   }
 
+  Wire.end();
 
   return addressI2C;
 }
