@@ -20,7 +20,7 @@ BMI270 imu;
 String JSON_entrada;  // Variable que recibe al JSON en crudo de PagWeb
 StaticJsonDocument<200> receiveJSON;
 
-String JSON_corriente;  // Variable que envía el JSON de datos
+String JSON_salida;  // Variable que envía el JSON de datos
 StaticJsonDocument<200> sendJSON;
 
 // Parámetros de SPI
@@ -30,19 +30,14 @@ uint32_t clockFrequency = 100000;
 void setup() {
   // Start serial
   Serial.begin(115200);
-  Serial.println("BMI270 Example 2 - Basic Readings SPI");
+
+  // Iniciar UART2 en los pines seleccionados
+  PagWeb.begin(115200, SERIAL_8N1, RX2, TX2);
+
+  Serial.println("MainCode JSON BMI270");
 
   pinMode(CS_PIN, INPUT);
   pinMode(SDO_PIN, OUTPUT);
-
-  String scan1 = scanI2C(68);
-  Serial.println("Escaneo LOW: " + scan1);
-
-  String scan2 = scanI2C(69);
-  Serial.println("Escaneo HIGH: " + scan2);
-
-  Serial.println("I2C scan done");
-  delay(10000);
 
   // Initialize the SPI library
   // void begin(int8_t sck = -1, int8_t miso = -1, int8_t mosi = -1, int8_t ss = -1);
@@ -67,9 +62,48 @@ void setup() {
 
 void loop() {
 
+  if (PagWeb.available()) {
 
+    JSON_entrada = PagWeb.readStringUntil('\n');                              // Leer hasta newline (JSON en crudo)
+    DeserializationError error = deserializeJson(receiveJSON, JSON_entrada);  // Deserializa el JSON y guarda la información en datosJSON
 
-  
+    if (!error) {
+      String Function = receiveJSON["Function"];  // Function es la variable de interés del JSON
+
+      int opc = 0;
+
+      if (Function == "scan") opc = 1;  // {"Function":"scan"}
+      else if (Function == "SPI") opc = 2;
+      else if (Function == "ping") opc = 3;  // {"Function":"ping"}
+
+      switch (opc) {
+        case 1:
+          {
+            Serial.println("==== Escaneo y lectura en direcciones I2C ====");
+            String scan1 = scanI2C(68);
+            Serial.println("Escaneo LOW: " + scan1);
+
+            String scan2 = scanI2C(69);
+            Serial.println("Escaneo HIGH: " + scan2);
+            break;
+          }
+
+        case 2:
+          {
+
+            break;
+          }
+
+        case 3:
+          {
+            sendJSON["ping"] = "pong";
+            serializeJson(sendJSON, PagWeb);  // Envío de datos por JSON a la PagWeb
+            PagWeb.println();
+            break;
+          }
+      }
+    }
+  }
 }
 
 void readIMU() {
@@ -106,6 +140,7 @@ void readIMU() {
   delay(100);
 }
 
+
 String scanI2C(int sw) {
 
   String addressI2C = "";
@@ -134,6 +169,22 @@ String scanI2C(int sw) {
       addressI2C += " ";
     }
   }
+
+  if (imu.beginI2C(0x68, Wire) == BMI2_OK) {
+    Serial.println("BMI270 detectado en 0x68");
+    delay(500);
+    for (int i = 0; i < 10; i++) {
+      readIMU();
+      delay(50);
+    }
+  } else if (imu.beginI2C(0x69, Wire) == BMI2_OK) {
+    Serial.println("BMI270 detectado en 0x69");
+    for (int i = 0; i < 10; i++) {
+      readIMU();
+      delay(50);
+    }
+  }
+
 
   return addressI2C;
 }
