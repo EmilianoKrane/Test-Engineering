@@ -1,10 +1,11 @@
-// ==== MAIN CODE JSON UE0087 CONVERTIDOR BOOST ====
+// ==== MAIN CODE JSON AR3775 Expansor ESP32 ====
 
 // --- BIBLIOTECAS ---
 #include <Wire.h>
 #include <Adafruit_INA219.h>
 #include <HardwareSerial.h>
 #include <ArduinoJson.h>
+#include "Adafruit_HUSB238.h"
 
 // Pines para UART2 (puedes reasignarlos)
 #define RX2 D4  // GPIO15 como RX
@@ -13,8 +14,8 @@
 #define RUN_BUTTON 4  // Botón de Arranque
 
 // Pines para comunicación I2C con el sensor de corriente
-#define I2C_SDA 6
-#define I2C_SCL 7
+#define I2C_SDA 22
+#define I2C_SCL 23
 
 // Relevador de puerto COM
 #define RELAYCom 20
@@ -31,8 +32,15 @@
 #define RELAY3 14
 #define RELAY4 0
 
+// Relevador de switcheo conectores
+#define RELAY11 D0
+#define RELAY22 D1
+
 // Comunicación UART Creación Objeto
 HardwareSerial PagWeb(1);  // Crear objeto para UART2 en PULSAR como PagWeb
+
+Adafruit_HUSB238 husb238;
+String cmd = "";
 
 // Comunicación I2C
 TwoWire I2CBus = TwoWire(0);
@@ -61,11 +69,15 @@ void setup() {
   PagWeb.begin(115200, SERIAL_8N1, RX2, TX2);
   Serial.println("UART2 iniciado en RX=9, TX=8");
 
-  // Iniciar comunicación I2C
-  I2CBus.begin(I2C_SDA, I2C_SCL);
+  Wire.begin(I2C_SDA, I2C_SCL);
 
-  if (!ina219_out.begin(&I2CBus)) {
-    Serial.println("INA219 salida no encontrado");
+  // Initialize the HUSB238
+  if (husb238.begin(HUSB238_I2CADDR_DEFAULT, &Wire)) {
+    Serial.println("HUSB238 initialized successfully.");
+  } else {
+    Serial.println("Couldn't find HUSB238, check your wiring?");
+    while (1)
+      ;
   }
 
   // Configurar pines de relés como salida
@@ -76,6 +88,9 @@ void setup() {
   pinMode(RELAY2, OUTPUT);
   pinMode(RELAY3, OUTPUT);
   pinMode(RELAY4, OUTPUT);
+
+  pinMode(RELAY11, OUTPUT);
+  pinMode(RELAY22, OUTPUT);
 
   pinMode(RUN_BUTTON, INPUT);
 
@@ -88,7 +103,8 @@ void setup() {
   digitalWrite(RELAY3, HIGH);
   digitalWrite(RELAY4, HIGH);
 
-  Serial.println("Midiendo voltaje y corriente con el INA219 ...");
+  digitalWrite(RELAY11, HIGH);
+  digitalWrite(RELAY22, HIGH);
 }
 
 
@@ -99,9 +115,9 @@ void loop() {
     enviarJSON.clear();  // Limpia cualquier dato previo
 
     if (digitalRead(RUN_BUTTON) == LOW) {
-      Serial.println("Arranque por botonera"); 
-      enviarJSON["Run"] = "OK";  // Envio de corriente JSON para corto
-      serializeJson(enviarJSON, PagWeb);           // Envío de datos por JSON a la PagWeb
+      Serial.println("Arranque por botonera");
+      enviarJSON["Run"] = "OK";           // Envio de corriente JSON para corto
+      serializeJson(enviarJSON, PagWeb);  // Envío de datos por JSON a la PagWeb
       PagWeb.println();
     }
   }
@@ -126,10 +142,23 @@ void loop() {
       else if (Function == "Fuente ON") opc = 2;
       else if (Function == "Fuente OFF") opc = 3;
 
+      else if (Function == "5V") opc = 4;
+      else if (Function == "12V") opc = 5;
+      else if (Function == "AAon") opc = 6;
+      else if (Function == "AAoff") opc = 7;
+      else if (Function == "BBon") opc = 8;
+      else if (Function == "BBoff") opc = 9;
+
       /*
       {"Function":"Lectura"}
       {"Function":"Fuente ON"}
       {"Function":"Fuente OFF"}
+      {"Function":"5V"}
+      {"Function":"12V"}
+      {"Function":"AAon"}
+      {"Function":"AAoff"}
+      {"Function":"BBon"}
+      {"Function":"BBoff"}
       */
 
       switch (opc) {
@@ -168,8 +197,6 @@ void loop() {
           enviarJSON["meas"] = JSONCorriente;          // Envio de corriente JSON para corto
           serializeJson(enviarJSON, PagWeb);           // Envío de datos por JSON a la PagWeb
           PagWeb.println();                            // Salto de línea para delimitar
-
-
           break;
 
         case 2:
@@ -180,6 +207,54 @@ void loop() {
         case 3:
           digitalWrite(RELAYA, LOW);
           digitalWrite(RELAYB, LOW);
+          break;
+
+        case 4:
+          {
+            HUSB238_PDSelection sel;
+            sel = PD_SRC_5V;
+            if (husb238.isVoltageDetected(sel)) {
+              husb238.selectPD(sel);
+              husb238.requestPD();
+              Serial.println("OK:SET 5V");
+            } else {
+              Serial.println("ERR:UNAVAILABLE");
+            }
+            break;
+          }
+
+        case 5:
+          {
+            HUSB238_PDSelection sel;
+            sel = PD_SRC_15V;
+            if (husb238.isVoltageDetected(sel)) {
+              husb238.selectPD(sel);
+              husb238.requestPD();
+              Serial.println("OK:SET 15V");
+            } else {
+              Serial.println("ERR:UNAVAILABLE");
+            }
+            break;
+          }
+
+        case 6:
+          digitalWrite(RELAY11, LOW);
+          digitalWrite(RELAY11, LOW);
+          break;
+
+        case 7:
+          digitalWrite(RELAY11, HIGH);
+          digitalWrite(RELAY11, HIGH);
+          break;
+
+        case 8:
+          digitalWrite(RELAY22, LOW);
+          digitalWrite(RELAY22, LOW);
+          break;
+
+        case 9:
+          digitalWrite(RELAY22, HIGH);
+          digitalWrite(RELAY22, HIGH);
           break;
       }
     }
