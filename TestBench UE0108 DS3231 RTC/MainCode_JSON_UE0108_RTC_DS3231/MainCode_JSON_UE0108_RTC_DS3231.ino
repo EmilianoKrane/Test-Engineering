@@ -168,7 +168,7 @@ void loop() {
     if (Function == "ping") opc = 1;            // {"Function":"ping"}
     else if (Function == "init") opc = 2;       // {"Function":"init"}
     else if (Function == "checkHour") opc = 3;  // {"Function":"checkHour"}
-    else if (Function == "restart") opc = 4;    // {"Function":"restart"}
+    else if (Function == "setHour") opc = 4;    // {"Function":"setHour", "datetime":"2026-05-04 15:18:30"}
 
     switch (opc) {
       case 1:
@@ -208,6 +208,27 @@ void loop() {
           }
           break;
         }
+
+      case 4:
+        {
+          sendJSON.clear();
+          DateTime nuevaHora;
+          String dtStr = receiveJSON["datetime"];  // Espera un string como "2026-05-04 15:15:00"
+
+          if (parseDateTime(dtStr, nuevaHora)) {
+            rtc.adjust(nuevaHora);
+            sendJSON["Result"] = "OK";
+            serialDebug("Hora ajustada manualmente vía Web");
+          } else {
+            sendJSON["Result"] = "Error de formato";
+          }
+
+          serializeJson(sendJSON, PagWeb);
+          PagWeb.println();
+          break;
+        }
+
+      default: break;
     }
   }
 }
