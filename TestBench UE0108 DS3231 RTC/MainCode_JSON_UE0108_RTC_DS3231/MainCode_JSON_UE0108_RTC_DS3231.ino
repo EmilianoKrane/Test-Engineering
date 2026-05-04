@@ -145,15 +145,26 @@ void loop() {
 
       case 2:
         {
-          if (!rtc.begin()) {
-            Serial.println(F("No se encontro el RTC DS3231. Verifica cableado/alimentacion."));
-            while (1) delay(10);
-          }
+          sendJSON.clear();
+          if (rtc.begin()) sendJSON["Result"] = "OK";
+          else sendJSON["debug"] = "RTC DS3231 no detected...";
 
           if (rtc.lostPower()) {
-            Serial.println(F("RTC sin hora valida. Ajustando a hora de compilacion..."));
+            serialDebug("RTC sin hora valida. Ajustando a hora de compilacion...");
+            pagwebDebug("RTC sin hora valida. Ajustando a hora de compilacion...");
             rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
           }
+
+          serializeJson(sendJSON, PagWeb);
+          PagWeb.println();
+
+          break;
+        }
+
+      case 3:
+        {
+          sendJSON.clear();
+
 
           break;
         }
