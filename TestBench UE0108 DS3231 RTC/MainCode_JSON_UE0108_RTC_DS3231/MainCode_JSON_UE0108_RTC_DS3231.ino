@@ -78,23 +78,36 @@ void checkAlarm(const DateTime& now) {
   }
 }
 
-void printDateTimeSerial(const DateTime& dt) {
-  Serial.print(semana[dt.dayOfTheWeek()]);
-  Serial.print(" ");
-  Serial.print(dt.day());
-  Serial.print(" de ");
-  Serial.print(monthsNames[dt.month() - 1]);
-  Serial.print(" de ");
-  Serial.print(dt.year());
-  Serial.print("  ");
-  if (dt.hour() < 10) Serial.print('0');
-  Serial.print(dt.hour());
-  Serial.print(':');
-  if (dt.minute() < 10) Serial.print('0');
-  Serial.print(dt.minute());
-  Serial.print(':');
-  if (dt.second() < 10) Serial.print('0');
-  Serial.print(dt.second());
+void DateTimeJSON(const DateTime& dt) {
+  sendJSON.clear();
+  bool hourSerial = true;
+  if (hourSerial) {
+    Serial.print(semana[dt.dayOfTheWeek()]);
+    Serial.print(" ");
+    Serial.print(dt.day());
+    Serial.print(" de ");
+    Serial.print(monthsNames[dt.month() - 1]);
+    Serial.print(" de ");
+    Serial.print(dt.year());
+    Serial.print("  ");
+    if (dt.hour() < 10) Serial.print('0');
+    Serial.print(dt.hour());
+    Serial.print(':');
+    if (dt.minute() < 10) Serial.print('0');
+    Serial.print(dt.minute());
+    Serial.print(':');
+    if (dt.second() < 10) Serial.print('0');
+    Serial.print(dt.second());
+    Serial.println();
+  }
+
+  // ==== Envío de datos por JSON ====
+  sendJSON["hour"] = dt.hour();
+  sendJSON["min"] = dt.minute();
+  sendJSON["seg"] = dt.second();
+
+  serializeJson(sendJSON, PagWeb);
+  PagWeb.println();
 }
 
 
@@ -184,20 +197,12 @@ void loop() {
       case 3:
         {
           sendJSON.clear();
-          Serial.println(F("\n--- ESTADO ---"));
-          Serial.print(F("Alarma: "));
-          Serial.println(alarmaEnabled ? F("HABILITADA") : F("DESHABILITADA"));
-          Serial.print(F("Hora de alarma: "));
-          if (alarmHour < 10) Serial.print('0');
-          Serial.print(alarmHour);
-          Serial.print(':');
-          if (alarmMinute < 10) Serial.print('0');
-          Serial.println(alarmMinute);
           Serial.print(F("Hora actual: "));
-          DateTime now = rtc.now();
-          printDateTimeSerial(now);
-          Serial.println();
-          Serial.println(F("---------------\n"));
+          for (int i = 0; i < 10; i++) {
+            DateTime now = rtc.now();
+            DateTimeJSON(now);
+            delay(1000);
+          }
           break;
         }
     }

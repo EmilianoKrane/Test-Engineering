@@ -40,6 +40,7 @@ unsigned long lastBlink = 0;
 unsigned long lastPrint = 0;
 
 //////////////////// Utilidades ////////////////////
+// & -> No hace copia de la variable en RAM, trabaja con la var original solo de lectura
 void printDateTimeSerial(const DateTime& dt) {
   Serial.print(semana[dt.dayOfTheWeek()]);
   Serial.print(" ");
@@ -194,10 +195,10 @@ void checkAlarm(const DateTime& now) {
 //////////////////// Dibujo en OLED ////////////////////
 void drawBellIcon(int16_t x, int16_t y) {
   // Campanita simple (8x8 aprox)
-  display.drawTriangle(x+2, y+6, x+5, y, x+8, y+6, SSD1306_WHITE); // cono
-  display.drawLine(x+1, y+6, x+9, y+6, SSD1306_WHITE);            // borde inferior
-  display.drawLine(x+3, y+7, x+7, y+7, SSD1306_WHITE);            // badajo/soporte
-  display.drawPixel(x+5, y+8, SSD1306_WHITE);                     // bolita
+  display.drawTriangle(x + 2, y + 6, x + 5, y, x + 8, y + 6, SSD1306_WHITE);  // cono
+  display.drawLine(x + 1, y + 6, x + 9, y + 6, SSD1306_WHITE);                // borde inferior
+  display.drawLine(x + 3, y + 7, x + 7, y + 7, SSD1306_WHITE);                // badajo/soporte
+  display.drawPixel(x + 5, y + 8, SSD1306_WHITE);                             // bolita
 }
 
 void renderClock(const DateTime& now) {
@@ -205,7 +206,7 @@ void renderClock(const DateTime& now) {
 
   // 1) Encabezado: día de la semana
   display.setTextColor(SSD1306_WHITE);
-  display.setTextSize(1); // 6x8 px por char
+  display.setTextSize(1);  // 6x8 px por char
   display.setCursor(0, 0);
   display.print(semana[now.dayOfTheWeek()]);
 
@@ -218,8 +219,8 @@ void renderClock(const DateTime& now) {
   // Usamos TextSize=3 -> cada char ~ 18 px ancho (6*3) aprox; dejamos 5 chars ("HH:MM")
   // Calculamos X para centrar
   display.setTextSize(3);
-  int charW = 6 * 3;   // ancho aprox por char (fuente base 5+1)
-  int textW = charW * 5; // "HH:MM"
+  int charW = 6 * 3;      // ancho aprox por char (fuente base 5+1)
+  int textW = charW * 5;  // "HH:MM"
   int x = (SCREEN_WIDTH - textW) / 2;
   int y = 18;
 
@@ -232,11 +233,11 @@ void renderClock(const DateTime& now) {
   display.print(now.hour());
 
   // Dos puntos
-  display.setCursor(x + charW*2, y);
+  display.setCursor(x + charW * 2, y);
   display.print(showColon ? ":" : " ");
 
   // Minutos
-  display.setCursor(x + charW*3, y);
+  display.setCursor(x + charW * 3, y);
   if (now.minute() < 10) display.print('0');
   display.print(now.minute());
 
@@ -245,7 +246,7 @@ void renderClock(const DateTime& now) {
   display.setCursor(0, 54);
   display.print(now.day());
   display.print(" ");
-  display.print(monthsNames[now.month()-1]);
+  display.print(monthsNames[now.month() - 1]);
   display.print(" ");
   display.print(now.year());
 
