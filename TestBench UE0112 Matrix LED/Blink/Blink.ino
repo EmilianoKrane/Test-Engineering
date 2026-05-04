@@ -8,12 +8,12 @@
 #define PIN1 6  // On Trinket or Gemma, suggest changing this to 1
 #define PIN2 7  // On Trinket or Gemma, suggest changing this to 1
 
-#define NUMPIXELS 64  // Popular NeoPixel ring size
+#define NUMPIXELS 2  // Popular NeoPixel ring size
 
 Adafruit_NeoPixel pixels(NUMPIXELS, PIN1, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel matrix(NUMPIXELS, PIN2, NEO_GRB + NEO_KHZ800);
 
-#define DELAYVAL 10  // Time (in milliseconds) to pause between pixels
+#define DELAYVAL 500  // Time (in milliseconds) to pause between pixels
 
 void setup() {
 
@@ -36,39 +36,39 @@ void loop() {
   }
 
   for (int i = 0; i < NUMPIXELS; i++) {
-    pixels.setPixelColor(i, pixels.Color(0, 3, 0));
+    pixels.setPixelColor(i, pixels.Color(0, 50, 0));
     pixels.show();    // Send the updated pixel colors to the hardware.
     delay(DELAYVAL);  // Pause before next pass through loop
   }
 
   for (int i = 0; i < NUMPIXELS; i++) {
-    matrix.setPixelColor(i, matrix.Color(0, 3, 0));
+    matrix.setPixelColor(i, matrix.Color(0, 50, 0));
     matrix.show();  // Send the updated pixel colors to the hardware.
     delay(DELAYVAL);
   }
 
 
   for (int i = 0; i < NUMPIXELS; i++) {
-    pixels.setPixelColor(i, pixels.Color(3, 0, 0));
+    pixels.setPixelColor(i, pixels.Color(50, 0, 0));
     pixels.show();    // Send the updated pixel colors to the hardware.
     delay(DELAYVAL);  // Pause before next pass through loop
   }
 
   for (int i = 0; i < NUMPIXELS; i++) {
-    matrix.setPixelColor(i, matrix.Color(3, 0, 0));
+    matrix.setPixelColor(i, matrix.Color(50, 0, 0));
     matrix.show();  // Send the updated pixel colors to the hardware.
     delay(DELAYVAL);
   }
 
 
   for (int i = 0; i < NUMPIXELS; i++) {
-    pixels.setPixelColor(i, pixels.Color(0, 0, 3));
+    pixels.setPixelColor(i, pixels.Color(0, 0, 50));
     pixels.show();    // Send the updated pixel colors to the hardware.
     delay(DELAYVAL);  // Pause before next pass through loop
   }
 
   for (int i = 0; i < NUMPIXELS; i++) {
-    matrix.setPixelColor(i, matrix.Color(0, 0, 3));
+    matrix.setPixelColor(i, matrix.Color(0, 0, 50));
     matrix.show();  // Send the updated pixel colors to the hardware.
     delay(DELAYVAL);
   }
