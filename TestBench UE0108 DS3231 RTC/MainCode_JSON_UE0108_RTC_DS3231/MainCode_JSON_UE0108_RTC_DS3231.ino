@@ -68,14 +68,33 @@ void checkAlarm(const DateTime& now) {
   if (now.hour() == alarmHour && now.minute() == alarmMinute && now.second() == 0) {
     if (lastTriggerMinute != now.minute()) {
       Serial.println(F("** ALARMA **"));
-      digitalWrite(LED_BUILTIN, HIGH);
+      //digitalWrite(LED_BUILTIN, HIGH);
       lastTriggerMinute = now.minute();
     }
   } else {
     if (now.minute() != alarmMinute) {
-      digitalWrite(LED_BUILTIN, LOW);
+      //digitalWrite(LED_BUILTIN, LOW);
     }
   }
+}
+
+void printDateTimeSerial(const DateTime& dt) {
+  Serial.print(semana[dt.dayOfTheWeek()]);
+  Serial.print(" ");
+  Serial.print(dt.day());
+  Serial.print(" de ");
+  Serial.print(monthsNames[dt.month() - 1]);
+  Serial.print(" de ");
+  Serial.print(dt.year());
+  Serial.print("  ");
+  if (dt.hour() < 10) Serial.print('0');
+  Serial.print(dt.hour());
+  Serial.print(':');
+  if (dt.minute() < 10) Serial.print('0');
+  Serial.print(dt.minute());
+  Serial.print(':');
+  if (dt.second() < 10) Serial.print('0');
+  Serial.print(dt.second());
 }
 
 
@@ -130,8 +149,10 @@ void loop() {
     String Function = receiveJSON["Function"];
 
     int opc = 0;
-    if (Function == "ping") opc = 1;       // {"Function":"ping"}
-    else if (Function == "init") opc = 2;  // {"Function":"init"}
+    if (Function == "ping") opc = 1;            // {"Function":"ping"}
+    else if (Function == "init") opc = 2;       // {"Function":"init"}
+    else if (Function == "checkHour") opc = 3;  // {"Function":"checkHour"}
+    else if (Function == "restart") opc = 4;    // {"Function":"restart"}
 
     switch (opc) {
       case 1:
@@ -157,15 +178,26 @@ void loop() {
 
           serializeJson(sendJSON, PagWeb);
           PagWeb.println();
-
           break;
         }
 
       case 3:
         {
           sendJSON.clear();
-
-
+          Serial.println(F("\n--- ESTADO ---"));
+          Serial.print(F("Alarma: "));
+          Serial.println(alarmaEnabled ? F("HABILITADA") : F("DESHABILITADA"));
+          Serial.print(F("Hora de alarma: "));
+          if (alarmHour < 10) Serial.print('0');
+          Serial.print(alarmHour);
+          Serial.print(':');
+          if (alarmMinute < 10) Serial.print('0');
+          Serial.println(alarmMinute);
+          Serial.print(F("Hora actual: "));
+          DateTime now = rtc.now();
+          printDateTimeSerial(now);
+          Serial.println();
+          Serial.println(F("---------------\n"));
           break;
         }
     }
