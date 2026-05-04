@@ -105,6 +105,9 @@ void DateTimeJSON(const DateTime& dt) {
   sendJSON["hour"] = dt.hour();
   sendJSON["min"] = dt.minute();
   sendJSON["seg"] = dt.second();
+  sendJSON["day"] = dt.day();
+  sendJSON["month"] = monthsNames[dt.month() - 1];
+  sendJSON["year"] = dt.year();
 
   serializeJson(sendJSON, PagWeb);
   PagWeb.println();
