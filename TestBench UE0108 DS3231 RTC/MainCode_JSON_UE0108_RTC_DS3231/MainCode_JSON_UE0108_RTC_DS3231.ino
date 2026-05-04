@@ -1,3 +1,22 @@
+/*
+Firmware de prueba para el módulo UE0108 Test DevLab: I2C DS3231 RTC Module.
+
+Conexión: el módulo RTC se debe conectar mediante conector Qwiic/JST al conector JST
+de una Pulsar C6. La comunicación I2C utiliza los GPIOs 6 (SDA) y 7 (SCL).
+
+Funcionalidad:
+- Inicializa el RTC DS3231.
+- Verifica la hora actual.
+- Ajusta la hora mediante comandos JSON recibidos por UART2.
+- Responde con JSON a la interfaz de pruebas UNIT.
+
+Nota: las instrucciones JSON llegan a través del CH340 conectado al UART2
+con GPIOs 15 (RX2) y 19 (TX2). Si se desea usar el UART nativo de la Pulsar,
+se deberá adaptar el código para utilizar UART1 en lugar del objeto PagWeb.
+*/
+
+
+
 #include <Wire.h>
 #include <HardwareSerial.h>
 #include <Arduino.h>
@@ -14,14 +33,14 @@
 #define TX2 19        // >> GPIO19 como TX de UART2
 
 // ==== CREACIÓN DE OBJETOS ====
-HardwareSerial PagWeb(1);  // -> Creación de Objeto para UART 2 PagWeb
-RTC_DS3231 rtc;            // -> Creación de Objeto para RTC
+HardwareSerial PagWeb(1);  // Objeto UART2 para comunicación con la interfaz PagWeb / UNIT.
+RTC_DS3231 rtc;            // Objeto para controlar el RTC DS3231.
 
-String JSON_entrada;                   ///< Buffer para recibir JSON desde PagWeb
-StaticJsonDocument<1024> receiveJSON;  ///< Documento JSON para parsear datos recibidos
+String JSON_entrada;                   ///< Buffer para recibir líneas JSON desde PagWeb.
+StaticJsonDocument<1024> receiveJSON;  ///< Documento JSON para parseo de datos entrantes.
 
-String JSON_salida;                 ///< Buffer para transmitir JSON de respuesta
-StaticJsonDocument<1024> sendJSON;  ///< Documento JSON para armar respuestas
+String JSON_salida;                 ///< Buffer opcional para respuestas JSON (no usado directamente).
+StaticJsonDocument<1024> sendJSON;  ///< Documento JSON para construir respuestas.
 
 // ==== VARIABLES DE MANEJO DE RTC ====
 const char* semana[7] = { "Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado" };
@@ -38,7 +57,7 @@ unsigned long lastBlink = 0;
 
 // ==== FUNCIONES DE UTILIDAD ====
 bool parseDateTime(const String& s, DateTime& out) {
-  // Formato: YYYY-MM-DD HH:MM:SS
+  // Convierte un string con formato ISO "YYYY-MM-DD HH:MM:SS" en un objeto DateTime.
   if (s.length() < 19) return false;
   int Y = s.substring(0, 4).toInt();
   int M = s.substring(5, 7).toInt();
@@ -54,7 +73,7 @@ bool parseDateTime(const String& s, DateTime& out) {
 }
 
 bool parseAlarm(const String& s, int& h, int& m) {
-  // Formato: HH:MM (24h)
+  // Convierte un string "HH:MM" en hora y minuto. Función reservada para uso futuro.
   if (s.length() < 5) return false;
   h = s.substring(0, 2).toInt();
   m = s.substring(3, 5).toInt();
@@ -79,6 +98,7 @@ void checkAlarm(const DateTime& now) {
 }
 
 void DateTimeJSON(const DateTime& dt) {
+  // Construye un JSON con la fecha/hora actual y lo envía por UART2 (PagWeb).
   sendJSON.clear();
   bool hourSerial = true;
   if (hourSerial) {
@@ -128,34 +148,36 @@ void pagwebDebug(String str) {
 void setup() {
 
   // ==== Inicialización de comunicación serial ====
-  Serial.begin(115200);
-  PagWeb.begin(115200, SERIAL_8N1, RX2, TX2);
+  Serial.begin(115200);                            // Puerto USB para debug local.
+  PagWeb.begin(115200, SERIAL_8N1, RX2, TX2);      // UART2 para comandos JSON UNIT.
   delay(100);
   serialDebug("Serial initialized...");
   pagwebDebug("Test initialized...");
 
-  Wire.begin(SDA_PIN, SCL_PIN);  // -> Inicialización bloque I2C
+  Wire.begin(SDA_PIN, SCL_PIN);  // Inicializa el bus I2C con los pines SDA/SCL definidos.
 
   // ==== Declaración de pines ====
-  pinMode(RUN_BUTTON, INPUT);  // -> Botón de Arranque
+  pinMode(RUN_BUTTON, INPUT);  // Configura el botón de arranque en modo entrada.
 }
 
 
 void loop() {
 
+  // ==== Lectura del botón de arranque ====
   if (digitalRead(RUN_BUTTON) == HIGH) {
     delay(100);
-    sendJSON.clear();  // Limpia cualquier dato previo
+    sendJSON.clear();  // Limpia cualquier dato previo.
 
     if (digitalRead(RUN_BUTTON) == LOW) {
       serialDebug("Arranque por botonera");
-      sendJSON["Run"] = "OK";           // Envio de corriente JSON para corto
-      serializeJson(sendJSON, PagWeb);  // Envío de datos por JSON a la PagWeb
+      sendJSON["Run"] = "OK";           // Envío de confirmación JSON de arranque.
+      serializeJson(sendJSON, PagWeb);   // Envío de datos por JSON a la interfaz PagWeb.
       PagWeb.println();
     }
   }
 
 
+  // ==== Recepción de comandos JSON por PagWeb / UART2 ====
   if (PagWeb.available()) {
 
     JSON_entrada = PagWeb.readStringUntil('\n');
