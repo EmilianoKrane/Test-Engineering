@@ -69,6 +69,7 @@ void loop() {
     else if (Function == "scanDis") opc = 2;     // {"Function":"scanDis"}
     else if (Function == "initSensor") opc = 3;  // {"Function":"initSensor"}
     else if (Function == "setSensor") opc = 4;   // {"Function":"setSensor", "Gain":1, "IntTime": 100}
+    else if (Function == "readSensor") opc = 5;  // {"Function":"readSensor"}
 
     switch (opc) {
       case 1:  // -> Respuesta UART puente frontend <-> testbench
@@ -158,6 +159,22 @@ void loop() {
           break;
         }
 
+      case 5:
+        {
+          int samples = 20;
+          int delay_ms = 500;
+          for (int i = 0; i < samples; i++) {
+            Serial.print("Luz Bruta (ALS): ");
+            Serial.print(veml.readALS());
+            Serial.print("\tLuz Blanca: ");
+            Serial.print(veml.readWhite());
+            Serial.print("\tLux calculados: ");  // El VEML7700 procesa lux reales basados en un cálculo interno
+            Serial.print(veml.readLux());
+            Serial.println();
+            delay(delay_ms);
+          }
+          break;
+        }
 
 
       default: break;
