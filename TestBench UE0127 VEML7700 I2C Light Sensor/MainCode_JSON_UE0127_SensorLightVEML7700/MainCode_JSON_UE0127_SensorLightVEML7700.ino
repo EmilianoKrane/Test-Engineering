@@ -61,12 +61,14 @@ void loop() {
 
     // ==== Claves recibidas por el JSON ====
     String Function = receiveJSON["Function"];
+    int Gain = receiveJSON["Gain"] | 3;
+    int IntTime = receiveJSON["IntTime"] | 100;
 
     int opc = 0;
     if (Function == "ping") opc = 1;             // {"Function":"ping"}
     else if (Function == "scanDis") opc = 2;     // {"Function":"scanDis"}
     else if (Function == "initSensor") opc = 3;  // {"Function":"initSensor"}
-    else if (Function == "setSensor") opc = 4;   // {"Function":"setSensor", "gain":"min"}
+    else if (Function == "setSensor") opc = 4;   // {"Function":"setSensor", "Gain":1, "IntTime": 100}
 
     switch (opc) {
       case 1:  // -> Respuesta UART puente frontend <-> testbench
@@ -105,40 +107,51 @@ void loop() {
       case 4:
         {
           /* Gain:                          Integration time:    
-              LOW = VEML7700_GAIN_1_8         25  = VEML7700_IT_25MS
-              MED = VEML7700_GAIN_1_4         50  = VEML7700_IT_50MS
-              HIGH = VEML7700_GAIN_1          100 = VEML7700_IT_100MS
-              ULTRA = EML7700_GAIN_2          200 = VEML7700_IT_200MS
+              1 = VEML7700_GAIN_1_8         25  = VEML7700_IT_25MS
+              2 = VEML7700_GAIN_1_4         50  = VEML7700_IT_50MS
+              3 = VEML7700_GAIN_1          100 = VEML7700_IT_100MS
+              4 = EML7700_GAIN_2          200 = VEML7700_IT_200MS
                                               400 = VEML7700_IT_400MS
                                               800 = VEML7700_IT_800MS
           */
 
           sendJSON.clear();
-
-
-          
-          veml.setGain(VEML7700_GAIN_1_4);
-          veml.setIntegrationTime(VEML7700_IT_800MS);
+          // ==== Establecemos parámetros de configuración ====
+          switch (Gain) {
+            case 1: veml.setGain(VEML7700_GAIN_1_8); break;
+            case 2: veml.setGain(VEML7700_GAIN_1_4); break;
+            case 3: veml.setGain(VEML7700_GAIN_1); break;
+            case 4: veml.setGain(VEML7700_GAIN_2); break;
+            default: break;
+          }
+          switch (IntTime) {
+            case 25: veml.setIntegrationTime(VEML7700_IT_25MS); break;
+            case 50: veml.setIntegrationTime(VEML7700_IT_50MS); break;
+            case 100: veml.setIntegrationTime(VEML7700_IT_100MS); break;
+            case 200: veml.setIntegrationTime(VEML7700_IT_200MS); break;
+            case 400: veml.setIntegrationTime(VEML7700_IT_400MS); break;
+            case 800: veml.setIntegrationTime(VEML7700_IT_800MS); break;
+            default: break;
+          }
           delay(500);
 
-          Serial.print(F("Gain: "));
+          // ==== Confirmación de parámetros ====
           switch (veml.getGain()) {
-            case VEML7700_GAIN_1: Serial.println("1"); break;
-            case VEML7700_GAIN_2: Serial.println("2"); break;
-            case VEML7700_GAIN_1_4: Serial.println("1/4"); break;
-            case VEML7700_GAIN_1_8: Serial.println("1/8"); break;
+            case VEML7700_GAIN_1: pagwebDebug("Gain 1"); break;
+            case VEML7700_GAIN_2: pagwebDebug("Gain 2"); break;
+            case VEML7700_GAIN_1_4: pagwebDebug("Gain 1/4"); break;
+            case VEML7700_GAIN_1_8: pagwebDebug("Gain 1/8"); break;
           }
-
-          Serial.print(F("Integration Time (ms): "));
           switch (veml.getIntegrationTime()) {
-            case VEML7700_IT_25MS: Serial.println("25"); break;
-            case VEML7700_IT_50MS: Serial.println("50"); break;
-            case VEML7700_IT_100MS: Serial.println("100"); break;
-            case VEML7700_IT_200MS: Serial.println("200"); break;
-            case VEML7700_IT_400MS: Serial.println("400"); break;
-            case VEML7700_IT_800MS: Serial.println("800"); break;
+            case VEML7700_IT_25MS: pagwebDebug("Time 25"); break;
+            case VEML7700_IT_50MS: pagwebDebug("Time 50"); break;
+            case VEML7700_IT_100MS: pagwebDebug("Time 100"); break;
+            case VEML7700_IT_200MS: pagwebDebug("Time 200"); break;
+            case VEML7700_IT_400MS: pagwebDebug("Time 400"); break;
+            case VEML7700_IT_800MS: pagwebDebug("Time 800"); break;
           }
 
+          // serialDebug(" Gain: " + String(veml.getGain()) + " | TimeInt: " + String(veml.getIntegrationTime()));
           veml.setLowThreshold(10000);
           veml.setHighThreshold(20000);
           veml.interruptEnable(true);
