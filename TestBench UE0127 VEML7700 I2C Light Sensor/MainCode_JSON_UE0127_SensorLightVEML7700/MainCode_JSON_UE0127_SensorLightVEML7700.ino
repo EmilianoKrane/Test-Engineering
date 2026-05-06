@@ -1,9 +1,23 @@
 /*
-Este firmware es el codigo principal para usar en el testbench como prueba del modulo UE0127 sensor light veml7700
-Se comunica por i2c la pulsarc6 del testbenh con el sensor de luz
-Se requierese el uso del arnes diseñado para sensores de luz controlador por un 
-relevador en el gpio20 
+  Firmware principal para el TestBench UE0127: sensor de luz VEML7700.
 
+  Funcionalidad:
+    - Comunicación I2C con el sensor VEML7700 usando la librería Wire.
+    - Interfaz UART2 para recibir órdenes JSON y responder con datos JSON.
+    - Control de relé USB 5V mediante GPIO20.
+    - Lectura de botón de arranque en GPIO4.
+
+  Conexiones principales:
+    - SDA -> GPIO6
+    - SCL -> GPIO7
+    - UART2 RX -> GPIO15
+    - UART2 TX -> GPIO19
+    - Relé USB -> GPIO20
+
+  Notas:
+    - Se usa el puerto serie PagWeb (UART2) como enlace de comunicación con el frontend.
+    - Si se desea usar el Serial USB nativo, el código debe adaptarse para usar Serial
+      en lugar de PagWeb y la conexión física del testbench.
 */
 
 #include <Arduino.h>
@@ -12,13 +26,13 @@ relevador en el gpio20
 #include <HardwareSerial.h>
 #include "Adafruit_VEML7700.h"
 
-// ==== DECLARACIÓN DE GPIOS ====
-#define RUN_BUTTON 4  // -> GPIO04 Arranque por botonera
-#define SDA_PIN 6     // -> GPIO06 SDA Comunicación I2C con el sensor
-#define SCL_PIN 7     // -> GPIO07 SCL Comunicación I2C con el sensor
-#define RX2_PIN 15    // -> GPIO15 RX UART2 TestBench
-#define TX2_PIN 19    // -> GPIO19 TX UART2 TestBench
-#define RELAYUSB 20   // -> GPIO20 Relé USB 5V a arnés de iluminación
+// ==== DEFINICIONES DE PINS ====
+#define RUN_BUTTON 4  // Botón de arranque del testbench
+#define SDA_PIN 6     // SDA para I2C con el sensor VEML7700
+#define SCL_PIN 7     // SCL para I2C con el sensor VEML7700
+#define RX2_PIN 15    // RX UART2 hacia el frontend PagWeb
+#define TX2_PIN 19    // TX UART2 hacia el frontend PagWeb
+#define RELAYUSB 20   // Relé USB 5V para el arnés de iluminación
 
 // ==== CREACIÓN DE OBJETOS ====
 HardwareSerial PagWeb(1);
@@ -31,29 +45,35 @@ String JSON_lectura;                ///< Buffer para transmitir JSON de respuest
 StaticJsonDocument<1024> sendJSON;  ///< Documento JSON para armar respuestas
 
 
+/**
+ * Envía mensajes de depuración al puerto serie USB nativo.
+ */
 void serialDebug(String str) {
-  str.replace("\"", "\\\"");  // Escapa comillas
+  str.replace("\"", "\\\"");  // Escapa comillas para JSON válido
   Serial.println("{\"debug\": \"" + str + "\"}");
 }
 
+/**
+ * Envía mensajes de depuración al puerto UART2 PagWeb.
+ */
 void pagwebDebug(String str) {
-  str.replace("\"", "\\\"");  // Escapa comillas
+  str.replace("\"", "\\\"");  // Escapa comillas para JSON válido
   PagWeb.println("{\"debug\": \"" + str + "\"}");
 }
 
 void setup() {
 
-  // ==== Inicialización de Comunicación Serial ====
+  // ==== Inicialización de comunicación serial ====
   Serial.begin(115200);
   PagWeb.begin(115200, SERIAL_8N1, RX2_PIN, TX2_PIN);
   delay(100);
   serialDebug("Serial Initialized...");
   pagwebDebug("Test Initialized...");
 
-  // ==== Inicialización bus I2C ====
+  // ==== Inicialización del bus I2C ====
   Wire.begin(SDA_PIN, SCL_PIN);
 
-  // ==== Inicialización de GPIOS ====
+  // ==== Configuración de pines ====
   pinMode(RUN_BUTTON, INPUT);
   pinMode(RELAYUSB, OUTPUT);
   digitalWrite(RELAYUSB, LOW);
@@ -61,24 +81,25 @@ void setup() {
 
 void loop() {
 
+  // Comprueba si el botón de arranque se ha pulsado y responde con un JSON de aceptación.
   if (digitalRead(RUN_BUTTON) == HIGH) {
     delay(100);
     sendJSON.clear();  // Limpia cualquier dato previo
 
     if (digitalRead(RUN_BUTTON) == LOW) {
       serialDebug("Arranque por botonera");
-      sendJSON["Run"] = "OK";           // Envio de corriente JSON para corto
-      serializeJson(sendJSON, PagWeb);  // Envío de datos por JSON a la PagWeb
+      sendJSON["Run"] = "OK";            // Envío de señal de arranque válido
+      serializeJson(sendJSON, PagWeb);      // Envío de datos por JSON a la PagWeb
       PagWeb.println();
     }
   }
 
   if (PagWeb.available()) {
 
-    JSON_entrada = PagWeb.readStringUntil('\n');                              // JSON crudo se lee hasta salto de linea
-    DeserializationError error = deserializeJson(receiveJSON, JSON_entrada);  // Se asigna el String al objeto JSON
+    JSON_entrada = PagWeb.readStringUntil('\n');                              // Lee el JSON completo hasta el salto de línea
+    DeserializationError error = deserializeJson(receiveJSON, JSON_entrada);  // Parsea el JSON recibido
 
-    // ==== Claves recibidas por el JSON ====
+    // ==== Extracción de parámetros de la petición JSON ====
     String Function = receiveJSON["Function"];
     int Gain = receiveJSON["Gain"] | 3;
     int IntTime = receiveJSON["IntTime"] | 100;
