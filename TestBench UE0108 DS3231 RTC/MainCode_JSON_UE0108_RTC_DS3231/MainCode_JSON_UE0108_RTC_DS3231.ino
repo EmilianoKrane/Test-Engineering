@@ -148,8 +148,8 @@ void pagwebDebug(String str) {
 void setup() {
 
   // ==== Inicialización de comunicación serial ====
-  Serial.begin(115200);                            // Puerto USB para debug local.
-  PagWeb.begin(115200, SERIAL_8N1, RX2, TX2);      // UART2 para comandos JSON UNIT.
+  Serial.begin(115200);                        // Puerto USB para debug local.
+  PagWeb.begin(115200, SERIAL_8N1, RX2, TX2);  // UART2 para comandos JSON UNIT.
   delay(100);
   serialDebug("Serial initialized...");
   pagwebDebug("Test initialized...");
@@ -171,7 +171,7 @@ void loop() {
     if (digitalRead(RUN_BUTTON) == LOW) {
       serialDebug("Arranque por botonera");
       sendJSON["Run"] = "OK";           // Envío de confirmación JSON de arranque.
-      serializeJson(sendJSON, PagWeb);   // Envío de datos por JSON a la interfaz PagWeb.
+      serializeJson(sendJSON, PagWeb);  // Envío de datos por JSON a la interfaz PagWeb.
       PagWeb.println();
     }
   }
@@ -221,12 +221,13 @@ void loop() {
 
       case 3:
         {
+          int muestras = 8, delay_ms = 1000;
           sendJSON.clear();
           Serial.print(F("Hora actual: "));
-          for (int i = 0; i < 10; i++) {
+          for (int i = 0; i < muestras; i++) {
             DateTime now = rtc.now();
             DateTimeJSON(now);
-            delay(1000);
+            delay(delay_ms);
           }
           break;
         }
