@@ -66,6 +66,7 @@ void loop() {
     if (Function == "ping") opc = 1;             // {"Function":"ping"}
     else if (Function == "scanDis") opc = 2;     // {"Function":"scanDis"}
     else if (Function == "initSensor") opc = 3;  // {"Function":"initSensor"}
+    else if (Function == "setSensor") opc = 4;   // {"Function":"setSensor", "gain":"min"}
 
     switch (opc) {
       case 1:  // -> Respuesta UART puente frontend <-> testbench
@@ -96,8 +97,51 @@ void loop() {
       case 3:
         {
           sendJSON.clear();
+          if (!veml.begin(&Wire)) serialDebug("Sensor no encontrado. Revisa la conexión.");
+          else serialDebug("¡Sensor VEML7700 encontrado y listo!");
+          break;
+        }
+
+      case 4:
+        {
+          /* Gain:                          Integration time:    
+              LOW = VEML7700_GAIN_1_8         25  = VEML7700_IT_25MS
+              MED = VEML7700_GAIN_1_4         50  = VEML7700_IT_50MS
+              HIGH = VEML7700_GAIN_1          100 = VEML7700_IT_100MS
+              ULTRA = EML7700_GAIN_2          200 = VEML7700_IT_200MS
+                                              400 = VEML7700_IT_400MS
+                                              800 = VEML7700_IT_800MS
+          */
+
+          sendJSON.clear();
+
 
           
+          veml.setGain(VEML7700_GAIN_1_4);
+          veml.setIntegrationTime(VEML7700_IT_800MS);
+          delay(500);
+
+          Serial.print(F("Gain: "));
+          switch (veml.getGain()) {
+            case VEML7700_GAIN_1: Serial.println("1"); break;
+            case VEML7700_GAIN_2: Serial.println("2"); break;
+            case VEML7700_GAIN_1_4: Serial.println("1/4"); break;
+            case VEML7700_GAIN_1_8: Serial.println("1/8"); break;
+          }
+
+          Serial.print(F("Integration Time (ms): "));
+          switch (veml.getIntegrationTime()) {
+            case VEML7700_IT_25MS: Serial.println("25"); break;
+            case VEML7700_IT_50MS: Serial.println("50"); break;
+            case VEML7700_IT_100MS: Serial.println("100"); break;
+            case VEML7700_IT_200MS: Serial.println("200"); break;
+            case VEML7700_IT_400MS: Serial.println("400"); break;
+            case VEML7700_IT_800MS: Serial.println("800"); break;
+          }
+
+          veml.setLowThreshold(10000);
+          veml.setHighThreshold(20000);
+          veml.interruptEnable(true);
           break;
         }
 
