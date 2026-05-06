@@ -1,7 +1,8 @@
 /*
 Este firmware es el codigo principal para usar en el testbench como prueba del modulo UE0127 sensor light veml7700
 Se comunica por i2c la pulsarc6 del testbenh con el sensor de luz
-
+Se requierese el uso del arnes diseñado para sensores de luz controlador por un 
+relevador en el gpio20 
 
 */
 
@@ -12,11 +13,12 @@ Se comunica por i2c la pulsarc6 del testbenh con el sensor de luz
 #include "Adafruit_VEML7700.h"
 
 // ==== DECLARACIÓN DE GPIOS ====
-#define SDA_PIN 6   // -> GPIO06 SDA Comunicación I2C con el sensor
-#define SCL_PIN 7   // -> GPIO07 SCL Comunicación I2C con el sensor
-#define RX2_PIN 15  // -> GPIO15 RX UART2 TestBench
-#define TX2_PIN 19  // -> GPIO19 TX UART2 TestBench
-
+#define RUN_BUTTON 4  // -> GPIO04 Arranque por botonera
+#define SDA_PIN 6     // -> GPIO06 SDA Comunicación I2C con el sensor
+#define SCL_PIN 7     // -> GPIO07 SCL Comunicación I2C con el sensor
+#define RX2_PIN 15    // -> GPIO15 RX UART2 TestBench
+#define TX2_PIN 19    // -> GPIO19 TX UART2 TestBench
+#define RELAYUSB 20   // -> GPIO20 Relé USB 5V a arnés de iluminación
 
 // ==== CREACIÓN DE OBJETOS ====
 HardwareSerial PagWeb(1);
@@ -50,9 +52,26 @@ void setup() {
 
   // ==== Inicialización bus I2C ====
   Wire.begin(SDA_PIN, SCL_PIN);
+
+  // ==== Inicialización de GPIOS ====
+  pinMode(RUN_BUTTON, INPUT);
+  pinMode(RELAYUSB, OUTPUT);
+  digitalWrite(RELAYUSB, LOW);
 }
 
 void loop() {
+
+  if (digitalRead(RUN_BUTTON) == HIGH) {
+    delay(100);
+    sendJSON.clear();  // Limpia cualquier dato previo
+
+    if (digitalRead(RUN_BUTTON) == LOW) {
+      serialDebug("Arranque por botonera");
+      sendJSON["Run"] = "OK";           // Envio de corriente JSON para corto
+      serializeJson(sendJSON, PagWeb);  // Envío de datos por JSON a la PagWeb
+      PagWeb.println();
+    }
+  }
 
   if (PagWeb.available()) {
 
@@ -68,8 +87,10 @@ void loop() {
     if (Function == "ping") opc = 1;             // {"Function":"ping"}
     else if (Function == "scanDis") opc = 2;     // {"Function":"scanDis"}
     else if (Function == "initSensor") opc = 3;  // {"Function":"initSensor"}
-    else if (Function == "setSensor") opc = 4;   // {"Function":"setSensor", "Gain":1, "IntTime": 100}
+    else if (Function == "setSensor") opc = 4;   // {"Function":"setSensor", "Gain":1, "IntTime": 25}
     else if (Function == "readSensor") opc = 5;  // {"Function":"readSensor"}
+    else if (Function == "relayON") opc = 6;     // {"Function":"relayON"}
+    else if (Function == "relayOFF") opc = 7;    // {"Function":"relayOFF"}
 
     switch (opc) {
       case 1:  // -> Respuesta UART puente frontend <-> testbench
@@ -101,7 +122,13 @@ void loop() {
         {
           sendJSON.clear();
           if (!veml.begin(&Wire)) serialDebug("Sensor no encontrado. Revisa la conexión.");
-          else serialDebug("¡Sensor VEML7700 encontrado y listo!");
+          else {
+            serialDebug("¡Sensor VEML7700 encontrado y listo!");
+            pagwebDebug("Sensor VEML7700 initialized...");
+            sendJSON["Result"] = "OK";
+          }
+          serializeJson(sendJSON, PagWeb);
+          PagWeb.println();
           break;
         }
 
@@ -110,10 +137,10 @@ void loop() {
           /* Gain:                          Integration time:    
               1 = VEML7700_GAIN_1_8         25  = VEML7700_IT_25MS
               2 = VEML7700_GAIN_1_4         50  = VEML7700_IT_50MS
-              3 = VEML7700_GAIN_1          100 = VEML7700_IT_100MS
-              4 = EML7700_GAIN_2          200 = VEML7700_IT_200MS
-                                              400 = VEML7700_IT_400MS
-                                              800 = VEML7700_IT_800MS
+              3 = VEML7700_GAIN_1           100 = VEML7700_IT_100MS
+              4 = EML7700_GAIN_2            200 = VEML7700_IT_200MS
+                                            400 = VEML7700_IT_400MS
+                                            800 = VEML7700_IT_800MS
           */
 
           sendJSON.clear();
@@ -134,7 +161,7 @@ void loop() {
             case 800: veml.setIntegrationTime(VEML7700_IT_800MS); break;
             default: break;
           }
-          delay(500);
+          delay(50);
 
           // ==== Confirmación de parámetros ====
           switch (veml.getGain()) {
@@ -161,18 +188,53 @@ void loop() {
 
       case 5:
         {
-          int samples = 20;
-          int delay_ms = 500;
+          sendJSON.clear();
+          int samples = 10, delay_ms = 50;
+          float avgLW = 0, avgLUX = 0, white = 0, lux = 0;
+          constexpr bool debug = false;
+
+          // ==== Debug de Lecturas en Monitor Serie y Promedio ====
           for (int i = 0; i < samples; i++) {
-            Serial.print("Luz Bruta (ALS): ");
-            Serial.print(veml.readALS());
-            Serial.print("\tLuz Blanca: ");
-            Serial.print(veml.readWhite());
-            Serial.print("\tLux calculados: ");  // El VEML7700 procesa lux reales basados en un cálculo interno
-            Serial.print(veml.readLux());
-            Serial.println();
+            white = veml.readWhite();
+            lux = veml.readLux();
+
+            if (debug) {
+              Serial.print("Luz Bruta (ALS): ");
+              Serial.print(veml.readALS());
+              Serial.print("\tLuz Blanca: ");
+              Serial.print(white);
+              Serial.print("\tLux calculados: ");  // El VEML7700 procesa lux reales basados en un cálculo interno
+              Serial.print(lux);
+              Serial.println();
+            }
+
+            avgLW += white;
+            avgLUX += lux;
             delay(delay_ms);
           }
+
+          avgLW /= samples;
+          avgLUX /= samples;
+          sendJSON["white"] = avgLW;
+          sendJSON["lux"] = avgLUX;
+          serializeJson(sendJSON, PagWeb);
+          PagWeb.println();
+          break;
+        }
+
+      case 6:
+        {
+          sendJSON.clear();
+          digitalWrite(RELAYUSB, HIGH);
+          pagwebDebug("Relay ON...");
+          break;
+        }
+
+      case 7:
+        {
+          sendJSON.clear();
+          digitalWrite(RELAYUSB, LOW);
+          pagwebDebug("Relay OFF...");
           break;
         }
 
