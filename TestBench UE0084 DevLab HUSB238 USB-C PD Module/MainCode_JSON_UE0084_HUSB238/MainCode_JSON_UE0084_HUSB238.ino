@@ -61,6 +61,7 @@ void setup() {
   // Inicialización de puertos seriales
   Serial.begin(115200);                        ///< Serial para debugging (115200 baud)
   PagWeb.begin(115200, SERIAL_8N1, RX2, TX2);  ///< UART para comunicación con PagWeb
+  delay(500);
   Serial.println("{\"debug\": \"Serial Inicializado\"}");
 
   // Inicialización del bus I2C para interfaz con HUSB238
@@ -81,9 +82,9 @@ void loop() {
   // ========== DETECCIÓN DEL BOTÓN DE ARRANQUE ==========
   // Lee el estado del botón con debounce simple
   if (digitalRead(RUN_BUTTON) == HIGH) {
-    delay(150);
+    sendJSON.clear();
+    delay(100);
     if (digitalRead(RUN_BUTTON) == LOW) {
-      sendJSON.clear();
       sendJSON["Run"] = "OK";           ///< Indica que se presionó el botón
       serializeJson(sendJSON, PagWeb);  ///< Envía confirmación a PagWeb
       PagWeb.println();
@@ -107,28 +108,17 @@ void loop() {
 
       // Mapea el comando JSON a un número de opción
       int opc = 0;
-      if (Function == "ping")
-        opc = 1;  ///< {"Function": "ping"} - Prueba de conectividad
-
-      // ===== COMANDOS DEL MÓDULO HUSB238 =====
-      else if (Function == "init_husb")
-        opc = 2;  ///< {"Function": "init_husb"} - Inicializa el módulo
-      else if (Function == "sweep")
-        opc = 3;  ///< {"Function": "sweep"} - Barrer voltajes: 5V->9V->12V->15V->20V
-      else if (Function == "fixed")
-        opc = 4;  ///< {"Function": "fixed", "Value": "5"} - Voltaje fijo (5,9,12,15,18,20)
-      else if (Function == "restart")
-        opc = 5;  ///< {"Function": "restart"} - Reinicia el dispositivo
+      if (Function == "ping") opc = 1;            ///< {"Function": "ping"} - Prueba de conectividad
+      else if (Function == "init_husb") opc = 2;  ///< {"Function": "init_husb"} - Inicializa el módulo
+      else if (Function == "sweep") opc = 3;      ///< {"Function": "sweep"} - Barrer voltajes: 5V->9V->12V->15V->20V
+      else if (Function == "fixed") opc = 4;      ///< {"Function": "fixed", "Value": "5"} - Voltaje fijo (5,9,12,15,18,20)
+      else if (Function == "restart") opc = 5;    ///< {"Function": "restart"} - Reinicia el dispositivo
 
       // ===== CONTROL DEL RELEVADOR PARA REGULADOR 3.3V =====
-      else if (Function == "relayOn")
-        opc = 6;  ///< {"Function": "relayOn"} - Activa el relevador
-      else if (Function == "relayOff")
-        opc = 7;  ///< {"Function": "relayOff"} - Desactiva el relevador
+      else if (Function == "relayOn") opc = 6;   ///< {"Function": "relayOn"} - Activa el relevador
+      else if (Function == "relayOff") opc = 7;  ///< {"Function": "relayOff"} - Desactiva el relevador
 
-      // Ejecuta el comando correspondiente
       switch (opc) {
-
         // ----- CASE 1: PING - Prueba de conectividad -----
         case 1:
           {
@@ -218,9 +208,7 @@ void loop() {
         case 4:
           {
             sendJSON.clear();
-
             if (Value != "") {
-
               // Valida que el módulo esté inicializado
               if (state_husb) {
                 Serial.println("Configurando voltaje fijo a: " + Value + " V");
@@ -253,7 +241,6 @@ void loop() {
           {
             ESP.restart();
             delay(1000);
-
             sendJSON.clear();
             Serial.println("Reinicio de dispositivo");
             sendJSON["debug"] = "Reinicio de dispositivo...";
