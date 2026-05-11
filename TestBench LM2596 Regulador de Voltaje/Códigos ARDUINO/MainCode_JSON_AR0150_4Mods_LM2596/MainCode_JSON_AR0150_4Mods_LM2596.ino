@@ -1,11 +1,14 @@
 /**
-Este firmware sirve de puente entre la interfaz de pruebas y el testbench para poder
-testear hasta 4 modulos de regulador stepup lm2596 a la vez por medio de la prensa de pruebas
-Se utilizar el testbench junto a la regleta de relevadores para poder manipular las entradas y salidas
-que se van a probar secuencialmente. 
-Aunado a esto, se mantienen las funciones de control para 
-las pruebas individuales del mismo modulo. O sea este firmware es el final final master, funciona
-tanto para la ejecución indiv como multiple del testcon multi ventana
+ * Firmware TestBench LM2596 Multi-Módulo
+ *
+ * Este firmware actúa como puente entre la interfaz de pruebas y el testbench,
+ * permitiendo ejecutar pruebas sobre hasta 4 módulos reguladores step-up LM2596.
+ *
+ * Proporciona:
+ *  - control por UART/JSON desde la interfaz web,
+ *  - mediciones de corriente con sensores INA219,
+ *  - control de relés para cortocircuito y alimentación,
+ *  - pruebas individuales y barridos automáticos.
  */
 
 #include <Arduino.h>
@@ -45,9 +48,9 @@ const uint8_t SLAVE_ADDR = 0x40;
  * JSON buffers: Para parseo y creación de mensajes JSON
  */
 HardwareSerial PagWeb(1);  // Crear objeto para UART2 en PULSAR como PagWeb
-TwoWire I2CBus = TwoWire(0);
-Adafruit_INA219 ina219_in(0x40);   // >> Sensor de Corriente a la entrada del TestBench 0x40
-Adafruit_INA219 ina219_out(0x41);  // >> Sensor de Corriente a la salida del TestBench 0x41
+TwoWire I2CBus = TwoWire(0);    // Instancia TCP/I2C reservada para uso futuro
+Adafruit_INA219 ina219_in(0x40);   // Sensor de corriente INA219 en entrada del testbench
+Adafruit_INA219 ina219_out(0x41);  // Sensor de corriente INA219 en salida del testbench
 
 String JSON_entrada;                   ///< Buffer para recibir JSON desde PagWeb
 StaticJsonDocument<1024> receiveJSON;  ///< Documento JSON para parsear datos recibidos
@@ -62,6 +65,10 @@ float corrienteSensor = 0;         // Variable de lectura de corriente con el se
 float voltajeSensor = 0;           // Variable de lectura de voltaje con el sensor
 
 
+/**
+ * @brief Obtiene la corriente medida por el INA219 de entrada.
+ * @return Corriente en amperios.
+ */
 float current_in() {
   float shunt_mV = ina219_in.getShuntVoltage_mV();
   float bus_V = ina219_in.getBusVoltage_V();
@@ -74,6 +81,10 @@ float current_in() {
   return current_A;
 }
 
+/**
+ * @brief Obtiene la corriente medida por el INA219 de salida.
+ * @return Corriente en amperios.
+ */
 float current_out() {
   float shunt_mV = ina219_out.getShuntVoltage_mV();
   float bus_V = ina219_out.getBusVoltage_V();
@@ -107,8 +118,8 @@ void pagwebDebug(String str) {
 
 // --- Función para enviar comando I2C al esclavo ---
 /**
- * @brief Envía un comando I2C al dispositivo esclavo
- * @param command Comando a enviar (byte)
+ * @brief Envía un comando I2C al dispositivo esclavo.
+ * @param command Comando a enviar (byte).
  */
 void sendCommandI2C(uint8_t command) {
   Wire.beginTransmission(SLAVE_ADDR);
@@ -141,8 +152,8 @@ uint8_t readResponseI2C() {
 }
 
 /**
- * @brief Función de configuración inicial del dispositivo
- * Inicializa comunicaciones seriales, I2C y configura pines GPIO
+ * @brief Función de configuración inicial del dispositivo.
+ * Inicializa comunicaciones seriales, I2C y configura pines GPIO.
  */
 void setup() {
   // ==== Inicialización de Comunicación Serie ====
@@ -183,6 +194,7 @@ void setup() {
  * @brief Bucle principal del programa
  * Maneja la entrada del botón físico y procesa comandos JSON desde la interfaz web
  */
+/**
 void loop() {
 
   // ==== Manejo del botón de arranque ====
