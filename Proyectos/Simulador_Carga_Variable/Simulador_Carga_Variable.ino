@@ -31,8 +31,8 @@ void loop() {
     if (funcion == "Other" && start == "Read") {
 
       // ===== Lecturas simuladas =====
-      float voltaje   = randomFloat(2.9, 3.3);
-      float corriente = 0.2;
+      float voltaje   = randomFloat(10, 11.5);
+      float corriente = 2.5;
       float potencia  = voltaje * corriente;
 
       // ===== Formato solicitado =====
@@ -48,14 +48,5 @@ void loop() {
     }
   }
 }
-
-    DeserializationError error = deserializeJson(docIn, jsonEntrada);
-    if (error) {
-      Serial.println("JSON inválido");
-      return;
-    }
-
-    String funcion = docIn["Funcion"] | "";
-    String start   = docIn["Start"]   | "";
 
 

@@ -88,10 +88,8 @@ void setup() {
 
 void loop() {
 
-
   if (digitalRead(RUN_BUTTON) == HIGH) {
     delay(100);
-
     if (digitalRead(RUN_BUTTON) == LOW) {
       enviarJSON["Run"] = "OK";           // Envio de corriente JSON para corto
       serializeJson(enviarJSON, Serial);  // Envío de datos por JSON a la PagWeb
