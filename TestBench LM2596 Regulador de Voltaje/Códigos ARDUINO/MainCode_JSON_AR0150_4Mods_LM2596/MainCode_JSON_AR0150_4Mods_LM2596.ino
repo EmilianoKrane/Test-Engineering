@@ -12,6 +12,7 @@ tanto para la ejecución indiv como multiple del testcon multi ventana
 #include <ArduinoJson.h>
 #include <Wire.h>
 #include <HardwareSerial.h>
+#include <Adafruit_INA219.h>
 
 // ==== DECLARACIÓN DE PINES ====
 /**
@@ -23,6 +24,12 @@ tanto para la ejecución indiv como multiple del testcon multi ventana
 #define SCL_PIN 7     // >> SCL para I2C con el esclavo - Línea de reloj I2C
 #define RX2 15        // >> GPIO15 como RX de UART2 - Recepción de datos desde interfaz web
 #define TX2 19        // >> GPIO19 como TX de UART2 - Transmisión de datos a interfaz web
+#define RELAY1 14     // >> GPIO14 Accionamiento de Relé IN1 de Cortocircuito
+#define RELAY2 0      // >> GPIO00 Accionamiento de Relé IN2 de Cortocircuito
+#define RELAYA 8      // >> GPIO08 Accionamiento de Relé A Fuente de Alimentación [+]
+#define RELAYB 9      // >> GPIO09 Accionamiento de Relé B Fuente de Alimentación [-]
+// Nota: El GPIO08, por diseño, no cambia de estado, por lo que fisicamente en el
+// TesBench se encuentran puenteados RELAYA y RELAYB
 
 // --- Dirección I2C base del esclavo ---
 /**
@@ -37,13 +44,47 @@ const uint8_t SLAVE_ADDR = 0x40;
  * PagWeb: Comunicación UART con la interfaz web
  * JSON buffers: Para parseo y creación de mensajes JSON
  */
-HardwareSerial PagWeb(1);  // UART para comunicación con interfaz web
+HardwareSerial PagWeb(1);  // Crear objeto para UART2 en PULSAR como PagWeb
+TwoWire I2CBus = TwoWire(0);
+Adafruit_INA219 ina219_in(0x40);   // >> Sensor de Corriente a la entrada del TestBench 0x40
+Adafruit_INA219 ina219_out(0x41);  // >> Sensor de Corriente a la salida del TestBench 0x41
 
 String JSON_entrada;                   ///< Buffer para recibir JSON desde PagWeb
 StaticJsonDocument<1024> receiveJSON;  ///< Documento JSON para parsear datos recibidos
 
-String JSON_lectura;                ///< Buffer para transmitir JSON de respuesta
+String JSON_salida;                 ///< Buffer para transmitir JSON de respuesta
 StaticJsonDocument<1024> sendJSON;  ///< Documento JSON para armar respuestas
+
+// ==== DECLARACIÓN DE VARIABLES GLOBALES ====
+const float shuntOffset_mV = 0.0;  // Offset en vacío para lectura inicial
+const float R_SHUNT = 0.05;        // Resistencia Shunt = 50 mΩ
+float corrienteSensor = 0;         // Variable de lectura de corriente con el sensor
+float voltajeSensor = 0;           // Variable de lectura de voltaje con el sensor
+
+
+float current_in() {
+  float shunt_mV = ina219_in.getShuntVoltage_mV();
+  float bus_V = ina219_in.getBusVoltage_V();
+
+  shunt_mV -= shuntOffset_mV;
+  float shunt_V = shunt_mV / 1000.0;
+  float current_A = shunt_V / R_SHUNT;  // Corriente de interés
+  float load_V = bus_V + shunt_V;
+  float power_W = load_V * current_A;
+  return current_A;
+}
+
+float current_out() {
+  float shunt_mV = ina219_out.getShuntVoltage_mV();
+  float bus_V = ina219_out.getBusVoltage_V();
+
+  shunt_mV -= shuntOffset_mV;
+  float shunt_V = shunt_mV / 1000.0;
+  float current_A = shunt_V / R_SHUNT;  // Corriente de interés
+  float load_V = bus_V + shunt_V;
+  float power_W = load_V * current_A;
+  return current_A;
+}
 
 
 /**
@@ -90,8 +131,7 @@ uint8_t readResponseI2C() {
   Wire.requestFrom(SLAVE_ADDR, (uint8_t)1);  // Solicitar 1 byte
 
   if (Wire.available()) {
-    s
-      uint8_t response = Wire.read();
+    uint8_t response = Wire.read();
     serialDebug("Respuesta recibida: 0x" + String(response, HEX));
     return response;
   } else {
@@ -110,17 +150,34 @@ void setup() {
   PagWeb.begin(115200, SERIAL_8N1, RX2, TX2);  // UART para interfaz web
   delay(100);
   serialDebug("Serial Initialized...");
-  pagwebDebug("Test Initialized...");
+  pagwebDebug("Test Multi LM2596 Initialized...");
 
   // ==== Inicialización de BUS I2C ====
   Wire.begin(SDA_PIN, SCL_PIN);  // Iniciar I2C como maestro
   serialDebug("I2C Maestro inicializado en SDA: " + String(SDA_PIN) + " SCL: " + String(SCL_PIN));
 
-  // ==== Declaración de GPIOS ====
-  pinMode(RUN_BUTTON, INPUT);  // Configurar botón como entrada
+  //I2CBus.begin(SDA_PIN, SCL_PIN);
+  if (!ina219_out.begin(&Wire)) {
+    serialDebug("Current sensor INA219_out 0x41 no initilized...");
+    pagwebDebug("Current sensor INA219_out 0x41 no initilized...");
+    while (1) { delay(10); }
+  }
+  pagwebDebug("Test LM2596 StepUp Ready...");
 
+  // ==== Declaración de GPIOS ====
+  pinMode(RELAY1, OUTPUT);
+  pinMode(RELAY2, OUTPUT);
+  pinMode(RELAYA, OUTPUT);
+  pinMode(RELAYB, OUTPUT);
+  pinMode(RUN_BUTTON, INPUT);
+
+  digitalWrite(RELAY1, HIGH);  // >> Relevador de Cortocircuito OFF (Activo BAJAS)
+  digitalWrite(RELAY2, HIGH);  // >> Relevador de Cortocircuito OFF (Activo BAJAS)
+  digitalWrite(RELAYA, LOW);   // >> Relevador de Fuente ON (Activo BAJAS)
+  digitalWrite(RELAYB, LOW);   // >> Relevador de Fuente ON (Activo BAJAS)
   delay(500);
 }
+
 
 /**
  * @brief Bucle principal del programa
@@ -161,11 +218,12 @@ void loop() {
     int channel = receiveJSON["channel"] | 0;
 
     int opc = 0;
-    if (Function == "ping") opc = 1;            // {"Function": "ping"}
-    else if (Function == "scanAddr") opc = 2;   // {"Function": "scanAddr"}
-    else if (Function == "channelON") opc = 3;  // {"Function": "channelON", "channel":1}
-    else if (Function == "sweep") opc = 4;      // {"Function": "sweep"}
-    else if (Function == "sleep") opc = 5;      // {"Function": "sleep"}
+    if (Function == "ping") opc = 1;               // {"Function": "ping"}
+    else if (Function == "scanAddr") opc = 2;      // {"Function": "scanAddr"}
+    else if (Function == "channelON") opc = 3;     // {"Function": "channelON", "channel":1}
+    else if (Function == "sweep") opc = 4;         // {"Function": "sweep"}
+    else if (Function == "sleep") opc = 5;         // {"Function": "sleep"}
+    else if (Function == "shortCircuit") opc = 6;  // {"Function": "shortCircuit"}
 
     switch (opc) {
       case 1:  // Ping
@@ -241,6 +299,37 @@ void loop() {
           pagwebDebug("Sleep mode...");
           sendCommandI2C(0xFE);  // Comando de suspensión
           delay(100);
+          break;
+        }
+
+      case 6:
+        {
+          sendJSON.clear();  // Limpia cualquier dato previo
+          serialDebug("Ejecución de prueba de Cortocircuito");
+
+          // Accionamiento de relevadores
+          digitalWrite(RELAY1, LOW);  // Activo
+          digitalWrite(RELAY2, LOW);  // Activo
+          delay(1000);
+
+          corrienteSensor = current_out();
+          delay(100);
+
+          digitalWrite(RELAY1, HIGH);  // Apagado
+          digitalWrite(RELAY2, HIGH);  // Apagado
+
+          serialDebug("Corriente - " + String(corrienteSensor, 3));
+
+          if (fabs(corrienteSensor) < 0.2) {
+            sendJSON["Result"] = "OK";  // Clave JSON OK
+          }
+
+          JSON_salida = String(corrienteSensor, 3) + " A";  // Empaquetamiento
+          sendJSON["LecturaCorto"] = JSON_salida;           // Envio de corriente JSON para corto
+          serializeJson(sendJSON, PagWeb);                  // Envío de datos por JSON a la PagWeb
+          PagWeb.println();                                 // Salto de línea para delimitar
+
+          serialDebug("Fin de la prueba de corto");
           break;
         }
 
