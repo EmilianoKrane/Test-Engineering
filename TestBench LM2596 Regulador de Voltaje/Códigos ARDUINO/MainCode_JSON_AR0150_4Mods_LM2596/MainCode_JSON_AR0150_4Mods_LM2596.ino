@@ -47,8 +47,8 @@ const uint8_t SLAVE_ADDR = 0x40;
  * PagWeb: Comunicación UART con la interfaz web
  * JSON buffers: Para parseo y creación de mensajes JSON
  */
-HardwareSerial PagWeb(1);  // Crear objeto para UART2 en PULSAR como PagWeb
-TwoWire I2CBus = TwoWire(0);    // Instancia TCP/I2C reservada para uso futuro
+HardwareSerial PagWeb(1);          // Crear objeto para UART2 en PULSAR como PagWeb
+TwoWire I2CBus = TwoWire(0);       // Instancia TCP/I2C reservada para uso futuro
 Adafruit_INA219 ina219_in(0x40);   // Sensor de corriente INA219 en entrada del testbench
 Adafruit_INA219 ina219_out(0x41);  // Sensor de corriente INA219 en salida del testbench
 
@@ -194,7 +194,7 @@ void setup() {
  * @brief Bucle principal del programa
  * Maneja la entrada del botón físico y procesa comandos JSON desde la interfaz web
  */
-/**
+
 void loop() {
 
   // ==== Manejo del botón de arranque ====
@@ -230,12 +230,13 @@ void loop() {
     int channel = receiveJSON["channel"] | 0;
 
     int opc = 0;
-    if (Function == "ping") opc = 1;               // {"Function": "ping"}
-    else if (Function == "scanAddr") opc = 2;      // {"Function": "scanAddr"}
-    else if (Function == "channelON") opc = 3;     // {"Function": "channelON", "channel":1}
-    else if (Function == "sweep") opc = 4;         // {"Function": "sweep"}
-    else if (Function == "sleep") opc = 5;         // {"Function": "sleep"}
-    else if (Function == "shortCircuit") opc = 6;  // {"Function": "shortCircuit"}
+    if (Function == "ping") opc = 1;                // {"Function": "ping"}
+    else if (Function == "scanAddr") opc = 2;       // {"Function": "scanAddr"}
+    else if (Function == "channelON") opc = 3;      // {"Function": "channelON", "channel":1}
+    else if (Function == "sweep") opc = 4;          // {"Function": "sweep"}
+    else if (Function == "sleep") opc = 5;          // {"Function": "sleep"}
+    else if (Function == "shortCircuit") opc = 6;   // {"Function": "shortCircuit"}
+    else if (Function == "currentSensor") opc = 7;  // {"Function": "currentSensor"}
 
     switch (opc) {
       case 1:  // Ping
@@ -342,6 +343,15 @@ void loop() {
           PagWeb.println();                                 // Salto de línea para delimitar
 
           serialDebug("Fin de la prueba de corto");
+          break;
+        }
+
+      case 7:
+        {
+          sendJSON.clear();
+          delay(100);
+          corrienteSensor = current_out();
+          pagwebDebug("Current: " + String(corrienteSensor) + " A");
           break;
         }
 
