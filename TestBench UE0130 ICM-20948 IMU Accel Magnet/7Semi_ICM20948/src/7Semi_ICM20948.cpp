@@ -334,71 +334,62 @@ bool ICM20948_7Semi::initMag()
     return false;
 
   softReset();
-
   sleep(false);
 
+  // 1. Habilitar el I2C Master interno
   if (!selectBank(0))
     return false;
-
   if (!bus->write(USER_CTRL, (uint8_t)USER_CTRL_I2C_MST_EN))
     return false;
 
+  // 2. Configurar velocidad del I2C Master
   if (!selectBank(3))
     return false;
-
   if (!bus->write(I2C_MST_CTRL, (uint8_t)0x07))
     return false;
 
+  // Ralentizar el bus I2C Master para no saturar al magnetómetro
+  bus->write(0x00, (uint8_t)0x04);
   delay(10);
 
+  // 3. Reset del magnetómetro AK09916
   writeSlave4(AK_CNTL3, 0x01);
-
   delay(100);
 
-  uint8_t i, who;
-  for (i = 0; i < 10; i++)
+  // 4. Verificar que el magnetómetro está vivo y responde
+  uint8_t who = 0;
+  bool mag_found = false;
+  for (int i = 0; i < 5; i++)
   {
     readSlave4(AK_WIA2, who);
     if (who == AK_WIA2_VAL)
     {
-      writeSlave4(AK_CNTL2, 0x08);
-
-      delay(10);
-
-      // ---- Setup auto-read (SLV0) ----
-      if (!selectBank(3))
-        return false;
-
-      if (!bus->write(I2C_SLV0_ADDR, (uint8_t)(AK09916_I2C_ADDR | 0x80)))
-        return false;
-
-      if (!bus->write(I2C_SLV0_REG, (uint8_t)AK_ST1))
-        return false;
-
-      if (!bus->write(I2C_SLV0_CTRL, (uint8_t)(I2C_SLVx_EN | 9)))
-        return false;
-
+      mag_found = true;
+      break; // Lo encontramos, salimos del bucle de búsqueda
     }
-
-    writeSlave4(AK_CNTL2, 0x08);
-
     delay(10);
-
-    // ---- Setup auto-read (SLV0) ----
-    if (!selectBank(3))
-      return false;
-
-    if (!bus->write(I2C_SLV0_ADDR, (uint8_t)(AK09916_I2C_ADDR | 0x80)))
-      return false;
-
-    if (!bus->write(I2C_SLV0_REG, (uint8_t)AK_ST1))
-      return false;
-
-    if (!bus->write(I2C_SLV0_CTRL, (uint8_t)(I2C_SLVx_EN | 8)))
-      return false;
-
-    return false;
   }
+
+  // Si no respondió, fallamos
+  if (!mag_found)
+    return false;
+
+  // 5. Configurar modo continuo a 100Hz
+  writeSlave4(AK_CNTL2, 0x08);
+  delay(10);
+
+  // 6. Configurar el esclavo automático (SLV0) para leer 9 bytes (¡El fix clave!)
+  if (!selectBank(3))
+    return false;
+  if (!bus->write(I2C_SLV0_ADDR, (uint8_t)(AK09916_I2C_ADDR | 0x80)))
+    return false;
+  if (!bus->write(I2C_SLV0_REG, (uint8_t)AK_ST1))
+    return false;
+  if (!bus->write(I2C_SLV0_CTRL, (uint8_t)(I2C_SLVx_EN | 9)))
+    return false;
+
+  // 7. Salimos exitosamente sin sobreescribir nada
+  return true;
 }
 
 bool ICM20948_7Semi::setMagOpMode(ICM20948_Op_Mode opMode)
