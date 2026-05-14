@@ -12,7 +12,11 @@ Adafruit_MPU6050 mpu;
 
 
 void initMPU6050() {
-  mpu.setAccelerometerRange(MPU6050_RANGE_16_G);
+
+  // Parámetros de configuración del sensor que mejor se adaptan al movimiento manual
+  // -> Se pueden modificar según las necesidades del usuario
+
+  mpu.setAccelerometerRange(MPU6050_RANGE_4_G);
   Serial.print("Accelerometer range set to: ");
   switch (mpu.getAccelerometerRange()) {
     case MPU6050_RANGE_2_G:
@@ -29,7 +33,7 @@ void initMPU6050() {
       break;
   }
 
-  mpu.setGyroRange(MPU6050_RANGE_2000_DEG);
+  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
   Serial.print("Gyro range set to: ");
   switch (mpu.getGyroRange()) {
     case MPU6050_RANGE_250_DEG:
@@ -46,7 +50,7 @@ void initMPU6050() {
       break;
   }
 
-  mpu.setFilterBandwidth(MPU6050_BAND_44_HZ);
+  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
   Serial.print("Filter bandwidth set to: ");
   switch (mpu.getFilterBandwidth()) {
     case MPU6050_BAND_260_HZ:
@@ -81,6 +85,15 @@ void setup() {
 
   Wire.begin(SDA_PIN, SCL_PIN);
   delay(100);
+
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      Serial.print("I2C device found at 0x");
+      if (addr < 16) Serial.print("0");
+      Serial.println(addr, HEX);
+    }
+  }
 
   // Try to initialize!
   if (!mpu.begin()) {
