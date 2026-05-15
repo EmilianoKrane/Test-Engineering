@@ -271,6 +271,11 @@ void runSoftwareList() {
 
 
 
+void serialDebug(String str) {
+  str.replace("\"", "\\\"");  // Escapa comillas para JSON válido
+  Serial.println("{\"debug\": \"" + str + "\"}");
+}
+
 // ============================================================================
 // SETUP: Inicialización del sistema
 // ============================================================================
@@ -282,8 +287,9 @@ void runSoftwareList() {
 // 3. Envía JSON "System:Ready" para confirmar que está listo
 // ============================================================================
 void setup() {
-  Serial.begin(9600);                                 // Inicializar Serial USB para PC
-  ITECH.begin(9600, SERIAL_8N1, RX1, TX1);            // Inicializar UART1 para carga
+  Serial.begin(9600);                       // Inicializar Serial USB para PC
+  ITECH.begin(9600, SERIAL_8N1, RX1, TX1);  // Inicializar UART1 para carga
+  delay(100);
   Serial.println("{\"System\":\"CV ITECH Ready\"}");  // Confirmación de inicialización
 }
 
@@ -331,6 +337,10 @@ void loop() {
     if (!error) {
       String funcion = doc["Funcion"] | "";  // Extraer "Funcion"
       String start = doc["Start"] | "";      // Extraer "Start"
+
+      if (funcion == "ping") {
+        serialDebug("ping - pong");
+      }
 
       // ===== COMANDOS: Configurar LIST o DYN =====
       if (funcion == "LIST" || funcion == "DYN") {
