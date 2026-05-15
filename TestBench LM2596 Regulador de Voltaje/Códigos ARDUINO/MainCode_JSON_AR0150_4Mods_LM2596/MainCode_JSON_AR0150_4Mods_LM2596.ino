@@ -320,6 +320,9 @@ void loop() {
           sendJSON.clear();  // Limpia cualquier dato previo
           serialDebug("Ejecución de prueba de Cortocircuito");
 
+
+
+
           // Accionamiento de relevadores
           digitalWrite(RELAY1, LOW);  // Activo
           digitalWrite(RELAY2, LOW);  // Activo

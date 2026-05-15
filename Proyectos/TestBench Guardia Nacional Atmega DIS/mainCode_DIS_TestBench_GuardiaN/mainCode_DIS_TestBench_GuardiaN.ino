@@ -1,54 +1,58 @@
 /* 
-===== CÓDIGO DE INTEGRACIÓN CONTROL DIS GUARDIA NACIONAL ====
-Este código funciona unicamente como un Passthrough entre la PagWeb y el arnés para DIS
+Est firmware funciona como puente e interprete por comunicación serial entre el testbench frontend y el menu de opciones
+flasheado en la memoria del ATMega328 del proyecto DIS para validar gpios y diversas funcionalidades
 
--- Como conexiones, la PagWeb selecciona el COM de la Pulsar en el Test y el conector QWIIC del arnés
-se conecta al bus de pines GPIO01 y GPIO02 UARTL
+
+-> La Pulsar funciona como un puente, reportando a la PagWeb|Frontend desde su serial nativo y enlanzando con el AtMega328
+por medio del UART2 declarado en los GPIOS D0 y D1
 */
 
-// --- BIBLIOTECAS ---
+// ==== BIBLIOTECAS ====
 #include <Wire.h>
 #include <HardwareSerial.h>
 #include <ArduinoJson.h>
 #include <Arduino.h>
 
-// ==== Declaración de pines
-#define RX2 D1        // GPIO como RXD
-#define TX2 D0        // GPIO como TXD
-#define RUN_BUTTON 4  // Botón de Arranque
+// ==== Declaración de GPIOS ====
+#define RX2 D1        // >> GPIO D1 como RX del UART2 comunicado al ATMega328
+#define TX2 D0        // >> GPIO D0 como TX del UART2 comunicado al ATMega328
+#define RUN_BUTTON 4  // >> Botonera de Arranque - Pin para botón de inicio físico
 
-// Relevadores de Accionamiento de Fuente
-#define RELAYA 8 
-#define RELAYB 9
+// ==== Inicialización de Objetos ====
+HardwareSerial DIS(1);  // Bus de UART2 para comunicación con AtMega328
 
-// ==== Inicialización de objetos
-HardwareSerial DIS(1);  // Objeto para UART2 en PULSAR como PagWeb
-
-// ==== Variables de inicialización
+// ==== Estructura de JSON ====
 String JSON_entrada;  // Variable que recibe al JSON en crudo de PagWeb
 StaticJsonDocument<200> receiveJSON;
-
-String JSON_lectura;  // Variable que envía el JSON de datos
+String JSON_salida;  // Variable que envía el JSON de datos
 StaticJsonDocument<200> sendJSON;
 
+// ==== Declaración de Variables Globales ====
 bool waitingResponse = false;
 unsigned long sendTime = 0;
 const unsigned long TIMEOUT = 3000;  // 3 segundos
-
 String rxDIS = "";
 
 
+void serialDebug(String str) {
+  str.replace("\"", "\\\"");  // Escapa comillas para JSON válido
+  Serial.println("{\"debug\": \"" + str + "\"}");
+}
+
 void setup() {
 
-  Serial.begin(115200);                     // Serial enlaza la PagWeb DIS 4800 || VSV 115200
-  DIS.begin(115200, SERIAL_8N1, RX2, TX2);  // Bus de comunicación con el CH552
+  Serial.begin(115200);                   // >> Serial nativo para comunicación con el Frontend
+  DIS.begin(9600, SERIAL_8N1, RX2, TX2);  // >> Serial 2 para comunicación con el ATMega328
+  delay(100);
+  serialDebug("Test DIS Ready...");
 
+
+
+  // ==== Declaración de Entradas/Salidas ====
   pinMode(RUN_BUTTON, INPUT);
-  pinMode(RELAYA, OUTPUT); 
-  pinMode(RELAYB, OUTPUT); 
 
-  digitalWrite(RELAYA, LOW); 
-  digitalWrite(RELAYB, LOW); 
+  digitalWrite(RELAYA, LOW);
+  digitalWrite(RELAYB, LOW);
 }
 
 void loop() {
