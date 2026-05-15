@@ -230,12 +230,13 @@ void loop() {
     int channel = receiveJSON["channel"] | 0;
 
     int opc = 0;
-    if (Function == "ping") opc = 1;               // {"Function": "ping"}
-    else if (Function == "scanAddr") opc = 2;      // {"Function": "scanAddr"}
-    else if (Function == "channelON") opc = 3;     // {"Function": "channelON", "channel":1}
-    else if (Function == "sweep") opc = 4;         // {"Function": "sweep"}
-    else if (Function == "sleep") opc = 5;         // {"Function": "sleep"}
-    else if (Function == "shortCircuit") opc = 6;  // {"Function": "shortCircuit"}
+    if (Function == "ping") opc = 1;                // {"Function": "ping"}
+    else if (Function == "scanAddr") opc = 2;       // {"Function": "scanAddr"}
+    else if (Function == "channelON") opc = 3;      // {"Function": "channelON", "channel":1}
+    else if (Function == "sweep") opc = 4;          // {"Function": "sweep"}
+    else if (Function == "sleep") opc = 5;          // {"Function": "sleep"}
+    else if (Function == "shortCircuit") opc = 6;   // {"Function": "shortCircuit"}
+    else if (Function == "currentSensor") opc = 7;  // {"Function": "currentSensor"}
 
     switch (opc) {
       case 1:  // Ping
@@ -342,6 +343,15 @@ void loop() {
           PagWeb.println();                                 // Salto de línea para delimitar
 
           serialDebug("Fin de la prueba de corto");
+          break;
+        }
+
+      case 7:
+        {
+          sendJSON.clear();
+          delay(100);
+          corrienteSensor = current_out();
+          pagwebDebug("Current: " + String(corrienteSensor) + " A");
           break;
         }
 

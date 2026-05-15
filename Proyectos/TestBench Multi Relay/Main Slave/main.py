@@ -49,7 +49,7 @@ def set_channel(channel):
         np[0] = (0, 0, 50)
     np.write()
 
-# --- Función para apagar NeoPixel y mux ---
+# --- Función para apagar NeoPixel y mux ----
 def apagar():
     EN_MUX.value(1)  # Deshabilitar mux
     for pin in select_pins:
