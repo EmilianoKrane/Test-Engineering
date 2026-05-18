@@ -320,9 +320,6 @@ void loop() {
           sendJSON.clear();  // Limpia cualquier dato previo
           serialDebug("Ejecución de prueba de Cortocircuito");
 
-
-
-
           // Accionamiento de relevadores
           digitalWrite(RELAY1, LOW);  // Activo
           digitalWrite(RELAY2, LOW);  // Activo
@@ -352,9 +349,13 @@ void loop() {
       case 7:
         {
           sendJSON.clear();
-          delay(100);
+          float minCurrent = 1.8;
+          delay(50);
           corrienteSensor = current_out();
-          pagwebDebug("Current: " + String(corrienteSensor) + " A");
+          pagwebDebug("Current " + String(corrienteSensor) + " A");
+          if (corrienteSensor > minCurrent) sendJSON["Result"] = "OK";
+          serializeJson(sendJSON, PagWeb);
+          PagWeb.println();
           break;
         }
 
