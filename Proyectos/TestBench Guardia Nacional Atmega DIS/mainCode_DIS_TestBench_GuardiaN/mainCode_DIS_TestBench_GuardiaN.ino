@@ -14,6 +14,8 @@ por medio del UART2 declarado en los GPIOS D0 y D1
 #include <Arduino.h>
 
 // ==== Declaración de GPIOS ====
+#define GPIO_CH1 2    // >> GPIO02 para lectura de estado digital en salida LED CH1 DIS PB1 -> D9
+#define GPIO_LOD 3    // >> GPIO03 para lectura de estado digital en salida LED CARGA DIS PB2 -> D10
 #define RX2 D1        // >> GPIO D1 como RX del UART2 comunicado al ATMega328
 #define TX2 D0        // >> GPIO D0 como TX del UART2 comunicado al ATMega328
 #define RUN_BUTTON 4  // >> Botonera de Arranque - Pin para botón de inicio físico
@@ -47,9 +49,10 @@ void setup() {
   serialDebug("Test DIS Ready...");
 
 
-
   // ==== Declaración de Entradas/Salidas ====
   pinMode(RUN_BUTTON, INPUT);
+  pinMode(GPIO_CH1, INPUT);
+  pinMode(GPIO_LOD, INPUT);
 }
 
 void loop() {
@@ -65,7 +68,7 @@ void loop() {
     }
   }
 
-  // ==== COMUNICACIÓN UART PULSAR  -> DIS ====
+  // ==== COMUNICACIÓN UART PULSAR <=> DIS ====
   if (Serial.available()) {
 
     JSON_entrada = Serial.readStringUntil('\n');
@@ -77,16 +80,17 @@ void loop() {
     } else {
 
       String Function = receiveJSON["Function"];
+      String Action = receiveJSON["Action"] | "help";
       int R = receiveJSON["R"] | 100;
       int G = receiveJSON["G"] | 0;
       int B = receiveJSON["B"] | 0;
 
       int opc = 0;
       if (Function == "ping") opc = 1;           // {"Function":"ping"}
-      else if (Function == "help") opc = 2;      // {"Function":"help"}
-      else if (Function == "neop_ON") opc = 3;   // {"Function":"neop_ON", "R": 100, "G": 100, "B": 100}
-      else if (Function == "neop_OFF") opc = 4;  // {"Function":"neop_OFF"}
-
+      else if (Function == "manage") opc = 2;    // {"Function":"manage", "Action": "help"}
+      else if (Function == "testAll") opc = 3;   // {"Function": "testAll"}
+      else if (Function == "neop_ON") opc = 5;   // {"Function":"neop_ON", "R": 100, "G": 100, "B": 100}
+      else if (Function == "neop_OFF") opc = 6;  // {"Function":"neop_OFF"}
 
       switch (opc) {
         case 1:  // >> Validación de comunicación UART
@@ -95,47 +99,56 @@ void loop() {
             serialDebug("Initialized uart communication bus testing...");
 
             bool stateUART = false;
-            bool foundcmd = false;
-            int timeoutLimpieza = 100;
-            while (DIS.available() && timeoutLimpieza > 0) {
-              DIS.read();
-              timeoutLimpieza--;
-            }
 
-            for (int i = 0; i < 10; i++) {
-              while (DIS.available()) {
-                String cmd = DIS.readStringUntil('\n');
-                cmd.trim();
-                if (cmd.indexOf("IN") != -1) foundcmd = true;
-              }
+            // 1. Limpieza inicial súper rápida
+            while (DIS.available()) { DIS.read(); }
 
-              if (foundcmd) {
-                sendJSON["Result"] = "OK";
-                serializeJson(sendJSON, Serial);
-                Serial.println();
+            String bufferRx = "";
+            unsigned long startTime = millis();
 
-                int timeoutLimpieza = 100;
-                while (DIS.available() && timeoutLimpieza > 0) {
-                  DIS.read();
-                  timeoutLimpieza--;
+            // 2. Abrimos una ventana de escucha activa de máximo 1.5 segundos
+            while (millis() - startTime < 1500) {
+
+              if (DIS.available()) {
+                char c = DIS.read();
+                bufferRx += c;  // Vamos armando el string byte por byte
+
+                // 3. Evaluamos solo cuando detectamos que el mensaje terminó (salto de línea)
+                if (c == '\n') {
+                  bufferRx.trim();  // Limpiamos espacios o caracteres invisibles
+
+                  // Usamos startsWith en lugar de indexOf para ser mucho más estrictos
+                  if (bufferRx.startsWith("IN")) {
+                    stateUART = true;
+                    break;  // ¡Encontramos un mensaje válido! Rompemos el while de inmediato
+                  }
+
+                  // Si llegó una línea completa pero no era la que buscábamos,
+                  // limpiamos el buffer local y seguimos escuchando
+                  bufferRx = "";
                 }
-
-                stateUART = true;
-                break;  // Rompe el ciclo for porque ya se encontraron las claves
               }
-
-              delay(100);
             }
 
-            if (!stateUART) {
+            // 4. Reporte de resultados
+            if (stateUART) {
+              sendJSON["ping"] = "pong";
+              serializeJson(sendJSON, Serial);
+              Serial.println();
+            } else {
               serialDebug("There is not communication via UART bus...");
             }
+
+            // Limpieza final del hardware antes de salir
+            while (DIS.available()) { DIS.read(); }
             break;
           }
 
         case 2:  // >> Despliegue de menú de ayuda
           {
-            DIS.println("h");  // Solicitamos el menú
+            if (Action == "help") DIS.println("h");         // Solicitamos el menú
+            else if (Action == "status") DIS.println("s");  // Solicitamos el estado de los GPIOS
+            else return;
 
             unsigned long lastCharTime = millis();
             bool esperandoMenu = true;
@@ -166,6 +179,28 @@ void loop() {
 
         case 3:
           {
+            sendJSON.clear();
+            bool stateLOD = false, stateCH1 = false;
+            int delay_ms = 500;
+
+            DIS.write("0");  // Comando para establecer todas las salidas en LOW
+            delay(delay_ms);
+            float initLOD = digitalRead(GPIO_LOD);
+            float initCH1 = digitalRead(GPIO_CH1);
+            delay(50);
+            DIS.write("1");  // Comando para establecer todas las salidas en HIGH
+            delay(delay_ms);
+            float finalLOD = digitalRead(GPIO_LOD);
+            float finalCH1 = digitalRead(GPIO_CH1);
+
+            if (initLOD == LOW && finalLOD == HIGH && initCH1 == LOW && finalCH1 == HIGH) sendJSON["Result"] = "OK";
+            serialDebug("LOD -> " + String(initLOD) + "|" + String(finalLOD));
+            serialDebug("CH1 -> " + String(initCH1) + "|" + String(finalCH1));
+            break;
+          }
+
+        case 5:
+          {
             serialDebug("Neopixel test initialized...");
             String cmd = "neon";
             DIS.println(cmd);
@@ -176,7 +211,7 @@ void loop() {
             break;
           }
 
-        case 4:
+        case 6:
           {
             String cmd = "neooff";
             DIS.println(cmd);
@@ -187,22 +222,5 @@ void loop() {
         default: break;
       }
     }
-
-
-    /*
-    char c = Serial.read();
-    DIS.write(c);
-
-    // Detectar envío del JSON específico
-    rxDIS += c;
-    if (rxDIS.endsWith("{\"Function\":\"testAll\"}")) {
-      waitingResponse = true;
-      sendTime = millis();
-      rxDIS = "";  // limpiar buffer
-    }
-
-    // Evitar que crezca infinito
-    if (rxDIS.length() > 64) rxDIS = "";
-    */
   }
 }
