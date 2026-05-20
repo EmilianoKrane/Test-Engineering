@@ -2,9 +2,14 @@
 Est firmware funciona como puente e interprete por comunicación serial entre el testbench frontend y el menu de opciones
 flasheado en la memoria del ATMega328 del proyecto DIS para validar gpios y diversas funcionalidades
 
-
 -> La Pulsar funciona como un puente, reportando a la PagWeb|Frontend desde su serial nativo y enlanzando con el AtMega328
-por medio del UART2 declarado en los GPIOS D0 y D1
+por medio del UART2 declarado en los GPIOS 4 y 5. Es importante que esta conexion de uart se haga al bus en 4 y 5
+ya que, experimentalmente, se vio que el bus en D0 y D1 tiene interferencia en la comunicación al 
+alimentar la tarjeta a 3.3V, a 5V funciona bien. 
+Con esta observación, es importante recalcar que el tarjet se debe alimentar a 3.3V para que las salidas
+del ATMega328 entreguen estados a este mismo voltaje y no afecten las entradas de la pulsar como test al 
+sensar los gpios. 
+
 */
 
 // ==== BIBLIOTECAS ====
@@ -14,11 +19,11 @@ por medio del UART2 declarado en los GPIOS D0 y D1
 #include <Arduino.h>
 
 // ==== Declaración de GPIOS ====
-#define GPIO_CH1 2    // >> GPIO02 para lectura de estado digital en salida LED CH1 DIS PB1 -> D9
-#define GPIO_LOD 3    // >> GPIO03 para lectura de estado digital en salida LED CARGA DIS PB2 -> D10
-#define RX2 D1        // >> GPIO D1 como RX del UART2 comunicado al ATMega328
-#define TX2 D0        // >> GPIO D0 como TX del UART2 comunicado al ATMega328
-#define RUN_BUTTON 4  // >> Botonera de Arranque - Pin para botón de inicio físico
+#define GPIO_CH1 2     // >> GPIO02 para lectura de estado digital en salida LED CH1 DIS PB1 -> D9
+#define GPIO_LOD 3     // >> GPIO03 para lectura de estado digital en salida LED CARGA DIS PB2 -> D10
+#define RX2 4          // >> GPIO D1 como RX del UART2 comunicado al ATMega328
+#define TX2 5          // >> GPIO D0 como TX del UART2 comunicado al ATMega328
+#define RUN_BUTTON 22  // >> Botonera de Arranque - Pin para botón de inicio físico
 
 // ==== Inicialización de Objetos ====
 HardwareSerial DIS(1);  // Bus de UART2 para comunicación con ATMega328
@@ -34,7 +39,6 @@ bool waitingResponse = false;
 unsigned long sendTime = 0;
 const unsigned long TIMEOUT = 3000;  // 3 segundos
 String rxDIS = "";
-
 
 void serialDebug(String str) {
   str.replace("\"", "\\\"");  // Escapa comillas para JSON válido
@@ -120,6 +124,21 @@ void loop() {
                   // Usamos startsWith en lugar de indexOf para ser mucho más estrictos
                   if (bufferRx.startsWith("IN")) {
                     stateUART = true;
+                    // --- NUEVA LÓGICA DE EXTRACCIÓN ---
+                    // 1. Buscamos en qué posición de la cadena empieza el texto "PD2="
+                    int indicePD2 = bufferRx.indexOf("PD2=");
+
+                    // Si indexOf devuelve algo diferente a -1, significa que sí encontró el texto
+                    if (indicePD2 != -1) {
+
+                      // 2. "PD2=" tiene 4 caracteres. El valor (0 o 1) está 4 posiciones adelante del inicio
+                      char valorPD2 = bufferRx.charAt(indicePD2 + 4);
+
+                      // 3. Lo agregamos a tu JSON para que el frontend del testbench lo reciba
+                      // Comparamos el caracter; si es '1', mandamos un entero 1, sino un 0.
+                      sendJSON["PD2_status"] = (valorPD2 == '1') ? 1 : 0;
+                    }
+                    // ----------------------------------
                     break;  // ¡Encontramos un mensaje válido! Rompemos el while de inmediato
                   }
 
@@ -185,17 +204,23 @@ void loop() {
 
             DIS.write("0");  // Comando para establecer todas las salidas en LOW
             delay(delay_ms);
-            float initLOD = digitalRead(GPIO_LOD);
-            float initCH1 = digitalRead(GPIO_CH1);
+            bool initLOD = digitalRead(GPIO_LOD);
+            bool initCH1 = digitalRead(GPIO_CH1);
             delay(50);
             DIS.write("1");  // Comando para establecer todas las salidas en HIGH
             delay(delay_ms);
-            float finalLOD = digitalRead(GPIO_LOD);
-            float finalCH1 = digitalRead(GPIO_CH1);
+            bool finalLOD = digitalRead(GPIO_LOD);
+            bool finalCH1 = digitalRead(GPIO_CH1);
+            delay(50);
+            DIS.write("0");  // Comando para establecer todas las salidas en LOW
 
-            if (initLOD == LOW && finalLOD == HIGH && initCH1 == LOW && finalCH1 == HIGH) sendJSON["Result"] = "OK";
+            if (!initLOD && finalLOD && !initCH1 && finalCH1) sendJSON["Result"] = "OK";
+            else sendJSON["gpios"] = "ERROR";
             serialDebug("LOD -> " + String(initLOD) + "|" + String(finalLOD));
             serialDebug("CH1 -> " + String(initCH1) + "|" + String(finalCH1));
+
+            serializeJson(sendJSON, Serial);
+            Serial.println();
             break;
           }
 
