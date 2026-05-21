@@ -1,15 +1,39 @@
-/* 
-Est firmware funciona como puente e interprete por comunicación serial entre el testbench frontend y el menu de opciones
-flasheado en la memoria del ATMega328 del proyecto DIS para validar gpios y diversas funcionalidades
+/*
+  Firmware puente Pulsar <=> Testbench DIS (Atmega328)
 
--> La Pulsar funciona como un puente, reportando a la PagWeb|Frontend desde su serial nativo y enlanzando con el AtMega328
-por medio del UART2 declarado en los GPIOS 4 y 5. Es importante que esta conexion de uart se haga al bus en 4 y 5
-ya que, experimentalmente, se vio que el bus en D0 y D1 tiene interferencia en la comunicación al 
-alimentar la tarjeta a 3.3V, a 5V funciona bien. 
-Con esta observación, es importante recalcar que el tarjet se debe alimentar a 3.3V para que las salidas
-del ATMega328 entreguen estados a este mismo voltaje y no afecten las entradas de la pulsar como test al 
-sensar los gpios. 
+  Descripción general:
+  --------------------
+  Este firmware se carga en una placa Pulsar que actúa como puente entre el frontend
+  (página web / PagWeb) y el firmware de test que corre en el target (Atmega328) del
+  proyecto DIS de la Guardia Nacional. La Pulsar recibe comandos en JSON por su
+  puerto serial nativo y traduce/encamina las solicitudes hacia el Atmega328 a través
+  de un UART secundario (UART2). Además recoge respuestas y lecturas de pines para
+  enviarlas de vuelta al frontend en formato JSON.
 
+  Flujo y propósito:
+  - La mini-PC del equipo i2d envía comandos y espera estados de gpio y otras pruebas.
+  - La Pulsar reenvía comandos al Atmega328 (por UART2) y lee las respuestas.
+  - Algunas operaciones exponen estados de pines digitales (GPIO_CH1, GPIO_LOD) y
+    permiten activar/desactivar el neopixel o ejecutar pruebas automatizadas.
+
+  Notas de hardware importantes:
+  - El UART entre Pulsar y Atmega328 se configura en los GPIOS 4 (RX2) y 5 (TX2).
+    Se observó interferencia al usar D0/D1 cuando el target está alimentado a 3.3V,
+    por ello use RX/TX en 4/5 para evitar problemas.
+  - El target debe alimentarse a 3.3V (multiprotocol alimenta el target a 3.3V).
+  - GPIO 2 y 3 se usan para leer salidas digitales del target (LED CH1 y LED CARGA).
+  - El arnés dispone de cables dupont y Qwiic para conexiones; el neopixel usa 3 cables:
+    marrón = GND, rojo = VCC, naranja = DATA.
+
+  Protocolos JSON soportados (ejemplos):
+  - Ping:       {"Function":"ping"}
+  - Manage:     {"Function":"manage","Action":"help"}
+  - TestAll:    {"Function":"testAll"}
+  - Neopixel ON:{"Function":"neop_ON","R":100,"G":100,"B":100}
+  - Neopixel OFF:{"Function":"neop_OFF"}
+
+  Comportamiento requerido: este archivo solo recibe comentarios explicativos.
+  No se deben modificar secuencias de operación ni la lógica existente.
 */
 
 // ==== BIBLIOTECAS ====
@@ -19,31 +43,38 @@ sensar los gpios.
 #include <Arduino.h>
 
 // ==== Declaración de GPIOS ====
-#define GPIO_CH1 2     // >> GPIO02 para lectura de estado digital en salida LED CH1 DIS PB1 -> D9
-#define GPIO_LOD 3     // >> GPIO03 para lectura de estado digital en salida LED CARGA DIS PB2 -> D10
-#define RX2 4          // >> GPIO D1 como RX del UART2 comunicado al ATMega328
-#define TX2 5          // >> GPIO D0 como TX del UART2 comunicado al ATMega328
-#define RUN_BUTTON 22  // >> Botonera de Arranque - Pin para botón de inicio físico
+// Pines usados por el arnés / testbench
+#define GPIO_CH1 2     // Entrada: lectura digital salida LED CH1 del target (Atmega328)
+#define GPIO_LOD 3     // Entrada: lectura digital salida LED CARGA del target
+#define RX2 4          // RX del UART2 (Pulsar) conectado al TX del Atmega328
+#define TX2 5          // TX del UART2 (Pulsar) conectado al RX del Atmega328
+#define RUN_BUTTON 22  // Entrada: botón físico de arranque en el testbench
 
 // ==== Inicialización de Objetos ====
-HardwareSerial DIS(1);  // Bus de UART2 para comunicación con ATMega328
+// Instancia de HardwareSerial para UART2 (puerto usado para comunicarse con el Atmega328)
+HardwareSerial DIS(1);
 
 // ==== Estructura de JSON ====
-String JSON_entrada;  // Variable que recibe al JSON en crudo de PagWeb
-StaticJsonDocument<200> receiveJSON;
-String JSON_salida;  // Variable que envía el JSON de datos
-StaticJsonDocument<200> sendJSON;
+// Buffers y documentos JSON para intercambio con el frontend
+String JSON_entrada;                  // JSON crudo recibido desde el frontend (Serial nativo)
+StaticJsonDocument<200> receiveJSON;  // Parse del JSON entrante
+String JSON_salida;                   // JSON a enviar hacia el frontend
+StaticJsonDocument<200> sendJSON;     // Document para serializar respuestas
 
 // ==== Declaración de Variables Globales ====
-bool waitingResponse = false;
-unsigned long sendTime = 0;
-const unsigned long TIMEOUT = 3000;  // 3 segundos
-String rxDIS = "";
+// Variables de estado y temporización
+bool waitingResponse = false;         // Flag genérico si se espera respuesta (no usado extensivamente)
+unsigned long sendTime = 0;           // Marca temporal para timeouts
+const unsigned long TIMEOUT = 3000;   // Timeout por defecto (ms)
+String rxDIS = "";                  // Buffer temporal de recepción desde DIS
 
 void serialDebug(String str) {
   str.replace("\"", "\\\"");  // Escapa comillas para JSON válido
   Serial.println("{\"debug\": \"" + str + "\"}");
 }
+
+// serialDebug(): envía mensajes de depuración al frontend en formato JSON.
+// Esto facilita que la página web reciba y muestre logs sin romper el protocolo JSON.
 
 void setup() {
 
@@ -59,6 +90,9 @@ void setup() {
   pinMode(GPIO_LOD, INPUT);
 }
 
+// setup(): inicializa puertos seriales y configura pines como entradas.
+// No se configuran salidas aquí porque la placa Pulsar actúa como lector/bridge.
+
 void loop() {
 
   // ==== AARRANQUE POR BOTONERA ====
@@ -71,6 +105,9 @@ void loop() {
       Serial.println();
     }
   }
+
+  // Nota: La lógica anterior detecta un pulso de inicio (botón) y notifica al frontend
+  // enviando {"Run":"OK"}. El doble muestreo (HIGH -> delay -> LOW) sirve como anti-rebote simple.
 
   // ==== COMUNICACIÓN UART PULSAR <=> DIS ====
   if (Serial.available()) {
@@ -249,3 +286,6 @@ void loop() {
     }
   }
 }
+
+// Fin del archivo: la lógica del loop procesa comandos JSON entrantes desde el frontend,
+// traduce acciones a comandos serie hacia el Atmega328 y reenvía lecturas/estados.
