@@ -131,10 +131,14 @@ void loop() {
 
       // ==== Claves de control JSON a recibir ===
       String Function = receiveJSON["Function"];
+      int time = receiveJSON["time"];
+      int iter = receiveJSON["iter"];
+      int btw = receiveJSON["timebtw"];
 
       int opc = 0;
-      if (Function == "shortCircuit") opc = 1;      // {"Function": "shortCircuit"}
-      else if (Function == "Lectura Nom") opc = 2;  // {"Function": "Lectura Nom"}
+      if (Function == "shortCircuit") opc = 1;         // {"Function": "shortCircuit"}
+      else if (Function == "nominalCurrent") opc = 2;  // {"Function": "nominalCurrent"}
+      else if (Function == "loopShort") opc = 3;       // {"Function":"loopShort","time": 1000, "timebtw":1000, "iter": 20}
 
       switch (opc) {
 
@@ -190,6 +194,34 @@ void loop() {
           serializeJson(sendJSON, PagWeb);  // Envío de datos por JSON a la PagWeb
           PagWeb.println();                 // Salto de línea para delimitar
           break;
+
+
+        case 3:
+          {
+            sendJSON.clear();
+            //int iter = iter;
+            int delay_short = time;
+            int delay_btw = btw;
+
+            for (int i = 0; i < iter; i++) {
+              // delay(delay_btw);
+              digitalWrite(RELAY1, LOW);  // Activo
+              digitalWrite(RELAY2, LOW);  // Activo
+              delay(delay_short);
+
+              corrienteSensor = current_out();
+              delay(delay_btw);
+
+              digitalWrite(RELAY1, HIGH);  // Apagado
+              digitalWrite(RELAY2, HIGH);  // Apagado
+              pagwebDebug("Corriente -> " + String(corrienteSensor) + " A | iter " + String(i));
+              delay(delay_btw);
+            }
+            pagwebDebug("Fin del loop");
+            break;
+          }
+
+          
       }
     }
   }

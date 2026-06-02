@@ -63,10 +63,10 @@ StaticJsonDocument<200> sendJSON;     // Document para serializar respuestas
 
 // ==== Declaración de Variables Globales ====
 // Variables de estado y temporización
-bool waitingResponse = false;         // Flag genérico si se espera respuesta (no usado extensivamente)
-unsigned long sendTime = 0;           // Marca temporal para timeouts
-const unsigned long TIMEOUT = 3000;   // Timeout por defecto (ms)
-String rxDIS = "";                  // Buffer temporal de recepción desde DIS
+bool waitingResponse = false;        // Flag genérico si se espera respuesta (no usado extensivamente)
+unsigned long sendTime = 0;          // Marca temporal para timeouts
+const unsigned long TIMEOUT = 3000;  // Timeout por defecto (ms)
+String rxDIS = "";                   // Buffer temporal de recepción desde DIS
 
 void serialDebug(String str) {
   str.replace("\"", "\\\"");  // Escapa comillas para JSON válido
