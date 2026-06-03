@@ -123,17 +123,18 @@ void loop() {
               result = accel_sensor.begin(BMA250_range_2g, BMA250_update_time_64ms);
               delay(50);
               if (result == 0) {
-                Serial.print("Addr I2C: ");
-                Serial.println(accel_sensor.I2Caddress, HEX);
+                serialDebug("Addr " + String(accel_sensor.I2Caddress, HEX));
+                sendJSON["Result"] = "OK";
+                serializeJson(sendJSON, Serial);
+                Serial.println();
                 break;
               } else {
                 sendJSON.clear();
                 sendJSON["i2c0x18"] = "Fail";
                 serializeJson(sendJSON, Serial);
                 Serial.println();
-                break;
               }
-              delay(100);
+              delay(50);
             }
 
             if (result == 0) {
@@ -156,8 +157,6 @@ void loop() {
                 }
               }
             }
-
-            Serial.println("Acabo i2c");
             break;
           }
 
@@ -181,8 +180,10 @@ void loop() {
               result = accel_sensor.begin(BMA250_range_2g, BMA250_update_time_64ms);
               delay(50);
               if (result == 0) {
-                Serial.print("Addr I2C: ");
-                Serial.println(accel_sensor.I2Caddress, HEX);
+                serialDebug("Addr " + String(accel_sensor.I2Caddress, HEX));
+                sendJSON["Result"] = "OK";
+                serializeJson(sendJSON, Serial);
+                Serial.println();
                 break;
               } else {
                 sendJSON.clear();
@@ -214,8 +215,6 @@ void loop() {
                 }
               }
             }
-
-            Serial.println("Acabo i2c");
             break;
           }
 
@@ -242,6 +241,7 @@ void loop() {
 
                 if (x != -1 && y != -1 && z != -1) {
                   sendJSON.clear();
+                  sendJSON["Result"] = "OK";
                   sendJSON["SPI"] = "OK";
                   showJSON();
                   serializeJson(sendJSON, Serial);
@@ -255,13 +255,11 @@ void loop() {
               serializeJson(sendJSON, Serial);
               Serial.println();
             }
-
             break;
           }
       }
     }
   }
-
 
   delay(100);
 }
