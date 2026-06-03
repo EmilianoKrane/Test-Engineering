@@ -1,8 +1,11 @@
-/*
-=== MainCode JSON UE0109 BMA255 ===
-Código de integración para BMA255 con lectura de I2C y SPI que debe ser
-usado con una pulsar c6 por medio de su puerto COM nativo
-*/
+/**
+ * @file      MainCode_JSON_UE0109_BMA255.ino
+ * @brief     Firmware de integración para sensor acelerómetro BMA255.
+ * Control de lectura I2C y SPI controlado vía comandos JSON por puerto COM.
+ * @author    EmilianoKrane
+ * @company   UNIT Electronics
+ * @hardware  Pulsar C6 (ESP32-C6)
+ */
 
 #include <Wire.h>
 #include <Arduino.h>
@@ -11,31 +14,37 @@ usado con una pulsar c6 por medio de su puerto COM nativo
 #include <ArduinoJson.h>
 #include "BMA250.h"
 
-
-// ==== DECLARACIÓN DE PINES ====
+// ==========================================
+// ==== DECLARACIÓN DE PINES ================
+// ==========================================
 #define RUN_BUTTON 4  // Botón de Arranque
-#define SDA_PIN 6     // >> GPIO06 MOSI
-#define SCL_PIN 7     // >> GPIO07 SCL
-#define SDO_PIN 2     // >> GPIO02 MISO
+#define SDA_PIN 6     // >> GPIO06 MOSI / SDA
+#define SCL_PIN 7     // >> GPIO07 SCL / SCK
+#define SDO_PIN 2     // >> GPIO02 MISO / I2C Addr Selector
 #define CS_PIN 18     // >> GPIO18 CS
-#define PS_PIN 21     // >> GPIO21 PS
+#define PS_PIN 21     // >> GPIO21 PS (Selector de Protocolo)
 
-
-// ==== CREACIÓN DE OBJETOS ====
+// ==========================================
+// ==== CREACIÓN DE OBJETOS Y GLOBALES ======
+// ==========================================
 UBMA250 accel_sensor;
 
-String JSON_entrada;  // Variable que recibe al JSON en crudo de PagWeb
+String JSON_entrada;  // Variable que recibe el JSON en crudo desde la Web
 StaticJsonDocument<300> receiveJSON;
 
-String JSON_salida;  // Variable que envía el JSON de datos
-StaticJsonDocument<300> sendJSON;
+StaticJsonDocument<300> sendJSON;  // Objeto para construir el JSON de salida
 
-// ==== DECLARACIÓN DE VARIABLES GLOBALES ====
 int x, y, z;
 double temp;
 
+// ==========================================
+// ==== FUNCIONES DE UTILIDAD ===============
+// ==========================================
 
-// ==== FUNCIONES DE UTILIDAD ====
+/**
+ * @brief Envía mensajes de depuración en formato JSON válido.
+ * @param str Mensaje de texto a enviar.
+ */
 void serialDebug(String str) {
   StaticJsonDocument<200> debugDoc;
   debugDoc["debug"] = str;
@@ -43,49 +52,57 @@ void serialDebug(String str) {
   Serial.println();
 }
 
+/**
+ * @brief Imprime los datos del sensor en formato de texto plano.
+ * @note  Uso exclusivo para depuración manual, evitar si la web espera solo JSON.
+ */
 void showSerial() {
   Serial.print("X = ");
   Serial.print(x);
-
   Serial.print("  Y = ");
   Serial.print(y);
-
   Serial.print("  Z = ");
   Serial.print(z);
-
   Serial.print("  Temperature(C) = ");
   Serial.println(temp);
 }
 
+/**
+ * @brief Agrega las coordenadas del acelerómetro al JSON de salida actual.
+ */
 void showJSON() {
   sendJSON["accelX"] = x;
   sendJSON["accelY"] = y;
   sendJSON["accelZ"] = z;
 }
 
-
+// ==========================================
+// ==== CONFIGURACIÓN INICIAL (SETUP) =======
+// ==========================================
 void setup() {
-
-  // ==== Inicialización de UART ====
+  // Inicialización de UART para comunicación con frontend
   Serial.begin(115200);
 
-  // ==== Declaración de pines de entrada y salida ====
+  // Configuración de pines de control de protocolo
   pinMode(SDO_PIN, OUTPUT);
   pinMode(PS_PIN, OUTPUT);
 }
 
+// ==========================================
+// ==== BUCLE PRINCIPAL (LOOP) ==============
+// ==========================================
 void loop() {
-
+  // Verifica si hay comandos entrantes desde la página web
   if (Serial.available()) {
+    JSON_entrada = Serial.readStringUntil('\n');  // Leer hasta newline
 
-    JSON_entrada = Serial.readStringUntil('\n');                              // Leer hasta newline (JSON en crudo)
-    DeserializationError error = deserializeJson(receiveJSON, JSON_entrada);  // Deserializa el JSON y guarda la información en datosJSON
+    // Deserializa el JSON entrante
+    DeserializationError error = deserializeJson(receiveJSON, JSON_entrada);
 
     if (!error) {
-      String Function = receiveJSON["Function"];  // Function es la variable de interés del JSON
+      String Function = receiveJSON["Function"];  // Extracción del comando
 
       int opc = 0;
-
       if (Function == "ping") opc = 1;        // {"Function":"ping"}
       else if (Function == "i2c18") opc = 2;  // {"Function":"i2c18"}
       else if (Function == "i2c19") opc = 3;  // {"Function":"i2c19"}
@@ -93,7 +110,9 @@ void loop() {
 
       switch (opc) {
 
-        // Validación de comunicación UART con la PagWeb <-> Pulsar
+        // ---------------------------------------------------------
+        // CASO 1: Validación de comunicación (Ping-Pong)
+        // ---------------------------------------------------------
         case 1:
           {
             sendJSON.clear();
@@ -103,22 +122,27 @@ void loop() {
             break;
           }
 
-        // ---- Lectura de sensor con I2C 0x18 ----
+        // ---------------------------------------------------------
+        // CASO 2: Lectura de sensor vía I2C (Dirección 0x18)
+        // ---------------------------------------------------------
         case 2:
           {
             sendJSON.clear();
             serialDebug("Test I2C Addr 0x18 Initialized...");
 
-            SPI.end();                 // <-- 1. CIERRA EL BUS SPI
-            pinMode(SDO_PIN, OUTPUT);  // <-- 2. ASEGURA QUE SDO SEA SALIDA PARA LA DIRECCIÓN
+            // 1. Preparación de Buses: Cierra SPI y configura pines para I2C
+            SPI.end();
+            pinMode(SDO_PIN, OUTPUT);
 
+            // 2. Configuración de Hardware: Modo I2C y Dirección 0x18
             digitalWrite(PS_PIN, HIGH);
             digitalWrite(SDO_PIN, LOW);
-            delay(100);
+            delay(100);  // Tiempo de estabilización del hardware
 
             Wire.begin(SDA_PIN, SCL_PIN);
             int result = -1, step = 15;
 
+            // 3. Intento de inicialización del sensor
             for (int i = 0; i < 3; i++) {
               result = accel_sensor.begin(BMA250_range_2g, BMA250_update_time_64ms);
               delay(50);
@@ -131,21 +155,21 @@ void loop() {
               } else {
                 sendJSON.clear();
                 sendJSON["i2c0x18"] = "Fail";
+                sendJSON["Error"] = "Init timeout";
                 serializeJson(sendJSON, Serial);
                 Serial.println();
               }
               delay(50);
             }
 
+            // 4. Lectura y envío de datos si la inicialización fue exitosa
             if (result == 0) {
               for (int j = 0; j < step; j++) {
                 accel_sensor.read();
                 x = accel_sensor.X;
                 y = accel_sensor.Y;
                 z = accel_sensor.Z;
-                //temp = ((accel_sensor.rawTemp * 0.5) + 24.0);
 
-                // Check if the BMA250 is not found or connected correctly
                 if (x != -1 && y != -1 && z != -1) {
                   sendJSON.clear();
                   sendJSON["i2c0x18"] = "OK";
@@ -153,30 +177,35 @@ void loop() {
                   showJSON();
                   serializeJson(sendJSON, Serial);
                   Serial.println();
-                  delay(100);
+                  delay(100);  // Controla la tasa de muestreo hacia la web
                 }
               }
             }
             break;
           }
 
-        // ---- Lectura de sensor con I2C 0x19 ----
+        // ---------------------------------------------------------
+        // CASO 3: Lectura de sensor vía I2C (Dirección 0x19)
+        // ---------------------------------------------------------
         case 3:
           {
             sendJSON.clear();
             serialDebug("Test I2C Addr 0x19 Initialized...");
 
-            SPI.end();                 // <-- 1. CIERRA EL BUS SPI
-            pinMode(SDO_PIN, OUTPUT);  // <-- 2. ASEGURA QUE SDO SEA SALIDA PARA LA DIRECCIÓN
+            // 1. Preparación de Buses
+            SPI.end();
+            pinMode(SDO_PIN, OUTPUT);
 
+            // 2. Configuración de Hardware: Modo I2C y Dirección 0x19
             digitalWrite(PS_PIN, HIGH);
-            digitalWrite(SDO_PIN, HIGH);  // (o HIGH para el caso 3)
+            digitalWrite(SDO_PIN, HIGH);
             delay(100);
 
             Wire.begin(SDA_PIN, SCL_PIN);
-            int result = 10;
+            int result = -1, step = 15;
 
-            for (int i = 0; i < 10; i++) {
+            // 3. Intento de inicialización
+            for (int i = 0; i < 3; i++) {
               result = accel_sensor.begin(BMA250_range_2g, BMA250_update_time_64ms);
               delay(50);
               if (result == 0) {
@@ -188,22 +217,21 @@ void loop() {
               } else {
                 sendJSON.clear();
                 sendJSON["i2c0x19"] = "Fail";
+                sendJSON["Error"] = "Init timeout";
                 serializeJson(sendJSON, Serial);
                 Serial.println();
-                break;
               }
               delay(100);
             }
 
+            // 4. Lectura de ráfaga
             if (result == 0) {
-              for (int j = 0; j < 20; j++) {
+              for (int j = 0; j < step; j++) {
                 accel_sensor.read();
                 x = accel_sensor.X;
                 y = accel_sensor.Y;
                 z = accel_sensor.Z;
-                //temp = ((accel_sensor.rawTemp * 0.5) + 24.0);
 
-                // Check if the BMA250 is not found or connected correctly
                 if (x != -1 && y != -1 && z != -1) {
                   sendJSON.clear();
                   sendJSON["i2c0x19"] = "OK";
@@ -218,21 +246,33 @@ void loop() {
             break;
           }
 
+        // ---------------------------------------------------------
+        // CASO 4: Lectura de sensor vía SPI
+        // ---------------------------------------------------------
         case 4:
           {
             sendJSON.clear();
+            serialDebug("Test SPI Initialized...");
 
-            Wire.end();               // <-- 1. CIERRA EL BUS I2C
-            pinMode(SDO_PIN, INPUT);  // <-- 2. SDO AHORA ES MISO (ENTRADA DE DATOS)
+            // 1. Preparación de Buses: Cierra I2C y libera pin SDO
+            Wire.end();
+            pinMode(SDO_PIN, INPUT);  // SDO funciona ahora como MISO
 
-            digitalWrite(PS_PIN, LOW);  // Selector de protocolo a SPI
+            // 2. Configuración de Hardware: Modo SPI
+            digitalWrite(PS_PIN, LOW);
             delay(100);
 
             SPI.begin(SCL_PIN, SDO_PIN, SDA_PIN, CS_PIN);
             int result = accel_sensor.beginSPI(BMA250_range_2g, BMA250_update_time_64ms, CS_PIN, &SPI);
+            int step = 15;
 
-            if (result == 0) {  // Correcta inicialización del sensor
-              for (int j = 0; j < 15; j++) {
+            // 3. Lectura de ráfaga o notificación de fallo
+            if (result == 0) {
+              sendJSON["Result"] = "OK";
+              serializeJson(sendJSON, Serial);
+              Serial.println();
+
+              for (int j = 0; j < step; j++) {
                 accel_sensor.read();
                 x = accel_sensor.X;
                 y = accel_sensor.Y;
@@ -241,9 +281,9 @@ void loop() {
 
                 if (x != -1 && y != -1 && z != -1) {
                   sendJSON.clear();
-                  sendJSON["Result"] = "OK";
                   sendJSON["SPI"] = "OK";
                   showJSON();
+                  sendJSON["Temperature"] = temp;  // Agregado térmico exclusivo de SPI
                   serializeJson(sendJSON, Serial);
                   Serial.println();
                   delay(100);
@@ -252,6 +292,7 @@ void loop() {
             } else {
               sendJSON.clear();
               sendJSON["SPI"] = "Fail";
+              sendJSON["Error"] = "Init timeout";
               serializeJson(sendJSON, Serial);
               Serial.println();
             }
@@ -260,6 +301,4 @@ void loop() {
       }
     }
   }
-
-  delay(100);
 }
