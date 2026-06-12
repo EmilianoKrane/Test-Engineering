@@ -18,8 +18,8 @@
 // ==== DECLARACIÓN DE PINES ================
 // ==========================================
 #define RUN_BUTTON 4  // Botón de Arranque
-#define SDA_PIN 6     // >> GPIO06 MOSI / SDA
-#define SCL_PIN 7     // >> GPIO07 SCL / SCK
+#define SDA_PIN 6    // >> GPIO022 MOSI / SDA
+#define SCL_PIN 7    // >> GPIO023 SCL / SCK
 #define SDO_PIN 2     // >> GPIO02 MISO / I2C Addr Selector
 #define CS_PIN 18     // >> GPIO18 CS
 #define PS_PIN 21     // >> GPIO21 PS (Selector de Protocolo)
@@ -84,6 +84,7 @@ void setup() {
   Serial.begin(115200);
 
   // Configuración de pines de control de protocolo
+  pinMode(RUN_BUTTON, INPUT);
   pinMode(SDO_PIN, OUTPUT);
   pinMode(PS_PIN, OUTPUT);
 }
@@ -92,6 +93,17 @@ void setup() {
 // ==== BUCLE PRINCIPAL (LOOP) ==============
 // ==========================================
 void loop() {
+
+  if (digitalRead(RUN_BUTTON) == HIGH) {
+    sendJSON.clear();
+    delay(100);
+    if (digitalRead(RUN_BUTTON) == LOW) {
+      sendJSON["Run"] = "OK";
+      serializeJson(sendJSON, Serial);
+      Serial.println();
+    }
+  }
+
   // Verifica si hay comandos entrantes desde la página web
   if (Serial.available()) {
     JSON_entrada = Serial.readStringUntil('\n');  // Leer hasta newline
