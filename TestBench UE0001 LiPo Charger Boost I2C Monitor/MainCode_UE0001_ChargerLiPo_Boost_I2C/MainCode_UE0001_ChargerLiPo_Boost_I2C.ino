@@ -7,6 +7,7 @@
 #include <HardwareSerial.h>
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <Adafruit_INA219.h>
 
 // ==== DECLARACIÓN DE GPIOS ==== +
 #define RUN_BUTTON 4  // >> GPIO04 Arranque por Botonera en TestBench
@@ -20,11 +21,20 @@ StaticJsonDocument<1024> receiveJSON;  ///< Documento JSON para parsear datos re
 String JSON_lectura;                ///< Buffer para transmitir JSON de respuesta
 StaticJsonDocument<1024> sendJSON;  ///< Documento JSON para armar respuestas
 
+Adafruit_INA219 ina219_in(0x40);   // Sensor de corriente INA219 en entrada del testbench
+Adafruit_INA219 ina219_out(0x41);  // Sensor de corriente INA219 en salida del testbench
+
+
 // ==== DECLARACIÓN DE REGISTRO Y VARIABLES GLOBALES ====
 #define MAX17048_ADDR 0x36
 #define REG_VCELL 0x02
 #define REG_SOC 0x04
-#define REG_MODE 0x06  // Registro para comandos especiales
+#define REG_MODE 0x06              // Registro para comandos especiales
+const float shuntOffset_mV = 0.0;  // Offset en vacío para lectura inicial
+const float R_SHUNT = 0.05;        // Resistencia Shunt = 50 mΩ
+float corrienteSensor = 0;         // Variable de lectura de corriente con el sensor
+float voltajeSensor = 0;           // Variable de lectura de voltaje con el sensor
+
 
 // ==== UTILIDADES ====
 void serialDebug(String str) {
@@ -68,12 +78,49 @@ void sendQuickStart() {
   Wire.endTransmission();
 }
 
+/**
+ * @brief Obtiene la corriente medida por el INA219 de entrada.
+ * @return Corriente en amperios.
+ */
+float current_in() {
+  float shunt_mV = ina219_in.getShuntVoltage_mV();
+  float bus_V = ina219_in.getBusVoltage_V();
+
+  shunt_mV -= shuntOffset_mV;
+  float shunt_V = shunt_mV / 1000.0;
+  float current_A = shunt_V / R_SHUNT;  // Corriente de interés
+  float load_V = bus_V + shunt_V;
+  float power_W = load_V * current_A;
+  return current_A;
+}
+
+/**
+ * @brief Obtiene la corriente medida por el INA219 de salida.
+ * @return Corriente en amperios.
+ */
+float current_out() {
+  float shunt_mV = ina219_out.getShuntVoltage_mV();
+  float bus_V = ina219_out.getBusVoltage_V();
+
+  shunt_mV -= shuntOffset_mV;
+  float shunt_V = shunt_mV / 1000.0;
+  float current_A = shunt_V / R_SHUNT;  // Corriente de interés
+  float load_V = bus_V + shunt_V;
+  float power_W = load_V * current_A;
+  return current_A;
+}
+
 void setup() {
   Serial.begin(115200);
   delay(100);
   serialDebug("Serial initialized...");
 
   Wire.begin(SDA_PIN, SCL_PIN);
+
+  if (!ina219_out.begin(&Wire)) {
+    serialDebug("Current sensor INA219_out 0x41 no initilized...");
+    while (1) { delay(10); }
+  }
 
   // ---- Configuración de GPIOS ----
 }
@@ -88,8 +135,9 @@ void loop() {
       String Function = receiveJSON["Function"];
 
       int opc = 0;
-      if (Function == "ping") opc = 1;             // {"Function": "ping"}
-      else if (Function == "monitorMax") opc = 2;  // {"Function": "monitorMax"}
+      if (Function == "ping") opc = 1;                // {"Function": "ping"}
+      else if (Function == "monitorMax") opc = 2;     // {"Function": "monitorMax"}
+      else if (Function == "sensorCurrent") opc = 3;  // {"Function": "sensorCurrent"}
 
       switch (opc) {
         case 1:
@@ -118,6 +166,14 @@ void loop() {
 
             serializeJson(sendJSON, Serial);
             Serial.println();
+            break;
+          }
+
+        case 3:
+          {
+            sendJSON.clear();
+            corrienteSensor = current_out();
+            serialDebug("Corriente = " + String(corrienteSensor, 3));
             break;
           }
       }
