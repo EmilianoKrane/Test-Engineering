@@ -14,8 +14,8 @@
 #define RUN_BUTTON 4  // Botón de Arranque
 
 // Pines para comunicación I2C con el sensor de corriente
-#define I2C_SDA 22
-#define I2C_SCL 23
+#define I2C_SDA 6
+#define I2C_SCL 7
 
 // Relevador de puerto COM
 #define RELAYCom 20
@@ -76,8 +76,8 @@ void setup() {
     Serial.println("HUSB238 initialized successfully.");
   } else {
     Serial.println("Couldn't find HUSB238, check your wiring?");
-    while (1)
-      ;
+    //while (1)
+    
   }
 
   // Configurar pines de relés como salida
@@ -124,9 +124,9 @@ void loop() {
 
 
   //  Accionamiento desde PagWeb
-  if (PagWeb.available()) {
+  if (Serial.available()) {
 
-    JSON = PagWeb.readStringUntil('\n');  // Leer hasta newline (JSON en crudo)
+    JSON = Serial.readStringUntil('\n');  // Leer hasta newline (JSON en crudo)
 
     // Deserializa el JSON y guarda la información en datosJSON
     DeserializationError error = deserializeJson(datosJSON, JSON);

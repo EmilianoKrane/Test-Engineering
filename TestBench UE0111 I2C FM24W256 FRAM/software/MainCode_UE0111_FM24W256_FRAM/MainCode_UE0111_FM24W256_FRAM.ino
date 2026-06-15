@@ -122,12 +122,12 @@ void loop() {
 
       int opc = 0;
       if (Function == "ping") opc = 1;            // {"Function":"ping"};
-      else if (Function == "scanAddr") opc = 2;   // {"Function":"scanAddr"}
+      else if (Function == "scanAddr") opc = 2;   // {"Function":"address"}
       else if (Function == "readFRAM") opc = 3;   // {"Function":"readFRAM"}
       else if (Function == "writeFRAM") opc = 4;  // {"Function":"writeFRAM", "Msg":"Hola Mundo DevLab"}
       else if (Function == "eraseFRAM") opc = 5;  // {"Function":"eraseFRAM", "Len": 32}
       else if (Function == "testAll") opc = 6;    // {"Function":"testAll"}
-                                                  // Response: {"state":"OK","write":true,"read":true,"wp":true,"data":"Hola Mundo :D"}
+                                                  // Response: {"state":"OK","write":true,"read":true,"data":"Hola Mundo :D"}
 
       switch (opc) {
         case 1:
@@ -237,6 +237,7 @@ void loop() {
             read = framRead(addrFRAM, buffer, strlen(msg));
             delay(10);
             if (read && write) state = "OK";
+            sendJSON["Result"] = "OK";
             sendJSON["state"] = state;
             sendJSON["write"] = write;
             sendJSON["read"] = read;

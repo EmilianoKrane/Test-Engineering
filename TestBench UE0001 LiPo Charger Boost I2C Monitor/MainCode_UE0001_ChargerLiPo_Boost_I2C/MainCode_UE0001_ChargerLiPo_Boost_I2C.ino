@@ -10,8 +10,8 @@
 
 // ==== DECLARACIÓN DE GPIOS ==== +
 #define RUN_BUTTON 4  // >> GPIO04 Arranque por Botonera en TestBench
-#define SDA_PIN 6
-#define SCL_PIN 7
+#define SDA_PIN 6     // >> GPIO06 Bus de datos I2C SDA
+#define SCL_PIN 7     // >> GPIO07 Señal de reloj I2D SCL
 
 // ==== DECLARACIÓN DE OBJETOS ====
 String JSON_entrada;                   ///< Buffer para recibir JSON desde PagWeb

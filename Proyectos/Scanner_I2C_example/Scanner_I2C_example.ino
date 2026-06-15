@@ -1,7 +1,7 @@
 #include <Wire.h>
 
-#define SDA_PIN 6
-#define SCL_PIN 7
+#define SDA_PIN 22
+#define SCL_PIN 23
 #define PIN_SDO D1
 #define PIN_CS D0
 
