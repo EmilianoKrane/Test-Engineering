@@ -171,13 +171,12 @@ void loop() {
 
             // Bucle de reintentos basado en tiempo
             while ((millis() - startTime) < timeout_ms) {
-              // Hacemos el escaneo (le paso 0 si tu función permite silenciar los prints
-              // para no saturar el serial durante el loop, o déjalo en 1 si lo necesitas)
+
               String resultado = deviceManager.scanDevices(1);
               addrStr = scanDirection(resultado);
 
-              if (addrStr != "null") {
-                // ¡El Puya respondió dentro del tiempo límite!
+              // Solo declaramos OK si addrStr NO es "null" y NO está vacío
+              if (addrStr != "null" && addrStr != "") {
                 status = "OK";
                 break;  // Rompemos el bucle while
               }
@@ -187,7 +186,7 @@ void loop() {
             }
 
             // Guardamos el resultado final (ya sea la dirección o el FAIL por timeout)
-            sendJSON["Ad"] = addrStr;         // Dirección I2C o "FAIL"
+            sendJSON["Ad"] = addrStr;         // Dirección I2C o "null"
             sendJSON["Result"] = status;      // "OK" o "FAIL"
             serializeJson(sendJSON, PagWeb);  // Envío de datos por JSON a la PagWeb
             PagWeb.println();
@@ -383,21 +382,26 @@ void loop() {
 
 
 String scanDirection(String resultado) {
-  String address = "";
-
   int okPos = resultado.indexOf("[OK]");
   if (okPos != -1) {
     // Buscar "0x" SOLO después de la línea [OK]
     int dirPos = resultado.indexOf("0x", okPos);
     if (dirPos != -1) {
+      // Buscar el siguiente espacio o salto de línea
       int fin = resultado.indexOf(' ', dirPos);
-      address = resultado.substring(dirPos, fin);
+      if (fin == -1) fin = resultado.indexOf('\n', dirPos);
+      if (fin == -1) fin = resultado.length();  // Por si es el último caracter
+
+      String address = resultado.substring(dirPos, fin);
+      address.trim();  // Limpiar saltos de línea (\r\n) invisibles
+
       Serial.println("Direccion encontrada: " + address);
       return address;
     }
-  } else {
-    return "FAIL";
   }
+
+  // Si no hay [OK] o no hay "0x", estandarizamos la salida de error a "null"
+  return "null";
 }
 
 String extraerUID(String resultado) {
