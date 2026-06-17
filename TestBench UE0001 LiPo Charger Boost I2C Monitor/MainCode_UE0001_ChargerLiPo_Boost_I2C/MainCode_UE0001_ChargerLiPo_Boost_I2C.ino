@@ -9,10 +9,13 @@
 #include <ArduinoJson.h>
 #include <Adafruit_INA219.h>
 
-// ==== DECLARACIÓN DE GPIOS ==== +
+// ==== DECLARACIÓN DE GPIOS ====
 #define RUN_BUTTON 4  // >> GPIO04 Arranque por Botonera en TestBench
 #define SDA_PIN 6     // >> GPIO06 Bus de datos I2C SDA
 #define SCL_PIN 7     // >> GPIO07 Señal de reloj I2D SCL
+#define RELAYA 8      // >> GPIO08 Accionamiento de Relé A Fuente de Alimentación [+]
+#define RELAYB 9      // >> GPIO09 Accionamiento de Relé B Fuente de Alimentación [-]
+
 
 // ==== DECLARACIÓN DE OBJETOS ====
 String JSON_entrada;                   ///< Buffer para recibir JSON desde PagWeb
@@ -123,9 +126,26 @@ void setup() {
   }
 
   // ---- Configuración de GPIOS ----
+  pinMode(RUN_BUTTON, INPUT_PULLDOWN);
+  pinMode(RELAYA, OUTPUT);
+  pinMode(RELAYB, OUTPUT);
+
+  digitalWrite(RELAYA, LOW);  // >> Relevador de Fuente ON (Activo BAJAS)
+  digitalWrite(RELAYB, LOW);  // >> Relevador de Fuente ON (Activo BAJAS)
+  delay(500);
 }
 
 void loop() {
+
+  if (digitalRead(RUN_BUTTON) == HIGH) {
+    sendJSON.clear();
+    delay(100);
+    if (digitalRead(RUN_BUTTON) == LOW) {
+      sendJSON["Run"] = "OK";
+      serializeJson(sendJSON, Serial);
+      Serial.println();
+    }
+  }
 
   if (Serial.available()) {
     JSON_entrada = Serial.readStringUntil('\n');
@@ -157,9 +177,9 @@ void loop() {
             float voltage = readVoltage();
             float soc = readSOC();
 
-            if (soc > 100) sendJSON["error"] = "Floating VBAT Terminal...";
+            if (soc > 100 || soc < 40) sendJSON["error"] = "Floating VBAT Terminal...";
             else {
-              sendJSON["Result"] = "OK";
+              if (voltage > 3.2 && voltage < 4.3) sendJSON["Result"] = "OK";
               sendJSON["voltage"] = voltage;
               sendJSON["SOC"] = soc;
             }

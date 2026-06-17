@@ -13,8 +13,8 @@
 #define RUN_BUTTON 4    // Botón de Arranque
 #define RX2 D4          // GPIO15 como RX para PagWeb
 #define TX2 D5          // GPIO19 como TX para PagWeb
-#define I2C_SDA 22      // Comunicación con tarjeta LockNode por I2C
-#define I2C_SCL 23      // Comunicación con tarjeta LockNode por I2C
+#define I2C_SDA 6       // Comunicación con tarjeta LockNode por I2C
+#define I2C_SCL 7       // Comunicación con tarjeta LockNode por I2C
 #define RELAYNO 2       // Lectura de valores analógicos por conmutación de relé
 #define RELAYNC 3       // Lectura de valores analógicos por conmutación de relé
 #define SWITCHPA4 D1    // Pin de accionamiento de Relé en TB para lectura de PA4
@@ -46,6 +46,15 @@ void runDemo();
 void printDeviceStatus();
 
 
+
+void pagwebDebug(String str) {
+  sendJSON.clear();
+  sendJSON["debug"] = str;
+  serializeJson(sendJSON, PagWeb);
+  PagWeb.println();
+}
+
+
 void setup() {
 
   Serial.begin(115200);
@@ -58,7 +67,7 @@ void setup() {
   // Declaración de pines de entrada de relevador
   pinMode(RELAYNO, INPUT);
   pinMode(RELAYNC, INPUT);
-  pinMode(RUN_BUTTON, INPUT);
+  pinMode(RUN_BUTTON, INPUT_PULLDOWN);
 
   pinMode(SWITCHPA4, OUTPUT);
   pinMode(RELAYPA4_ON, OUTPUT);
@@ -132,16 +141,26 @@ void loop() {
 
       int opc = 0;
 
-      if (Function == "scan") opc = 1;            // {"Function":"scan"}
-      else if (Function == "uid") opc = 2;        // {"Function":"uid", "Address": "0X42"}
-      else if (Function == "TestBuz") opc = 3;    // {"Function":"TestBuz", "Address": "0X42"}
-      else if (Function == "TestRelay") opc = 4;  // {"Function":"TestRelay", "Address": "0X42"}
-      else if (Function == "TestNeo") opc = 5;    // {"Function":"TestNeo", "Address": "0X42"}
-      else if (Function == "TestAll") opc = 6;    // {"Function":"TestAll", "Address": "0X42"}
+      if (Function == "ping") opc = 1;            // {"Function":"ping"}
+      else if (Function == "scan") opc = 2;       // {"Function":"scan"}
+      else if (Function == "uid") opc = 3;        // {"Function":"uid", "Address": "0X42"}
+      else if (Function == "TestBuz") opc = 4;    // {"Function":"TestBuz", "Address": "0X42"}
+      else if (Function == "TestRelay") opc = 5;  // {"Function":"TestRelay", "Address": "0X42"}
+      else if (Function == "TestNeo") opc = 6;    // {"Function":"TestNeo", "Address": "0X42"}
+      else if (Function == "TestAll") opc = 7;    // {"Function":"TestAll", "Address": "0X42"}
 
       switch (opc) {
 
-        case 1:  // Escaneo de dirección I2C con Timeout
+        case 1:
+          {
+            sendJSON.clear();
+            sendJSON["ping"] = "pong";
+            serializeJson(sendJSON, PagWeb);
+            PagWeb.println();
+            break;
+          }
+
+        case 2:  // Escaneo de dirección I2C con Timeout
           {
             sendJSON.clear();  // Limpia cualquier dato previo
             String addrStr = "null";
@@ -175,7 +194,7 @@ void loop() {
             break;
           }
 
-        case 2:
+        case 3:
           {
             sendJSON.clear();
             if (address > 0) {
@@ -205,7 +224,7 @@ void loop() {
           }
 
 
-        case 3:  // Ejecución de prueba única de buzzer
+        case 4:  // Ejecución de prueba única de buzzer
           {
             int delay_ms = 150;
             deviceManager.cmdPWM25(address, 1);
@@ -226,7 +245,7 @@ void loop() {
             break;
           }
 
-        case 4:  // Ejecución de prueba única de Relay
+        case 5:  // Ejecución de prueba única de Relay
           {
             int iteraciones = 10;
             int delay_ms = 500;
@@ -241,7 +260,7 @@ void loop() {
           }
 
 
-        case 5:  // Ejecución de prueba única de Neopixel
+        case 6:  // Ejecución de prueba única de Neopixel
           {
             int delay_ms = 1200;
             deviceManager.cmdNeoRed(address, 1);
@@ -258,7 +277,7 @@ void loop() {
             break;
           }
 
-        case 6:  // Ejecución de Test Completo
+        case 7:  // Ejecución de Test Completo
           {
             // ==== Bloque de Relay ====
             bool statusRele = false;
@@ -283,7 +302,6 @@ void loop() {
             if (fabs(relayNC_init - relayNC_fin) > 2200 && fabs(relayNO_init - relayNO_fin) > 2200) {
               statusRele = true;
             }
-            sendJSON["relay"] = statusRele;
 
             JsonObject relayObj = sendJSON.createNestedObject("Relay");
             relayObj["status"] = statusRele;
@@ -352,10 +370,11 @@ void loop() {
             delay(delay_ms);
             deviceManager.cmdNeoOff(address, 1);
             delay(delay_ms);
-            ESP.restart();
-
+            //ESP.restart();
             break;
           }
+
+        default: break;
       }
     }
   }
