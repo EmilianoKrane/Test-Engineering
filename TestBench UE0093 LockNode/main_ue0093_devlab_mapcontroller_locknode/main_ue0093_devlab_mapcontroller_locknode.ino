@@ -7,7 +7,7 @@
 #include <HardwareSerial.h>
 #include <ArduinoJson.h>
 #include <Arduino.h>
-#include <MapController.h>
+#include <DevLab_MapController.h>
 
 // ==== Declaración de pines
 #define RUN_BUTTON 4    // Botón de Arranque
@@ -22,7 +22,7 @@
 HardwareSerial PagWeb(1);  // Objeto para UART2 en PULSAR como PagWeb
 
 // MapController class with full functionality (MapCRUD alias available for command compatibility)
-MapController deviceManager;
+DevLab_MapController deviceManager;
 
 // ==== Variables de inicialización JSON
 String JSON_entrada;  // Variable que recibe al JSON en crudo de PagWeb
@@ -43,6 +43,77 @@ void processCommand(String cmd);
 void runDemo();
 void printDeviceStatus();
 
+String scanDirection(String resultado) {
+  // Buscar "0x" directamente en el string
+  int dirPos = resultado.indexOf("0x");
+
+  if (dirPos != -1) {
+    // Buscar el siguiente espacio, salto de línea (\n) o retorno de carro (\r)
+    int finEspacio = resultado.indexOf(' ', dirPos);
+    int finSalto = resultado.indexOf('\n', dirPos);
+    int finRetorno = resultado.indexOf('\r', dirPos);
+
+    // Determinar cuál es el final válido más cercano
+    int fin = resultado.length();
+    if (finEspacio != -1 && finEspacio < fin) fin = finEspacio;
+    if (finSalto != -1 && finSalto < fin) fin = finSalto;
+    if (finRetorno != -1 && finRetorno < fin) fin = finRetorno;
+
+    // Extraer y limpiar la dirección
+    String address = resultado.substring(dirPos, fin);
+    address.trim();  // Limpiar cualquier residuo (\r, \n o espacios invisibles)
+
+    Serial.println("Direccion encontrada: " + address);
+    return address;
+  }
+
+  // Si no hay "0x", estandarizamos la salida de error a "null"
+  return "null";
+}
+
+String extraerUID(String resultado) {
+  // Buscamos la etiqueta exacta que imprime el monitor serie
+  String etiqueta = "UID (32-bit): ";
+  int posInicial = resultado.indexOf(etiqueta);
+
+  if (posInicial != -1) {
+    // Calculamos dónde empieza el valor hexadecimal
+    int inicioValor = posInicial + etiqueta.length();
+
+    // Buscamos el salto de línea que marca el final de esa fila
+    int finValor = resultado.indexOf('\n', inicioValor);
+    if (finValor == -1) finValor = resultado.length();  // Por si es la última línea
+
+    // Recortamos el valor y lo limpiamos de espacios o retornos de carro (\r)
+    String uidStr = resultado.substring(inicioValor, finValor);
+    uidStr.trim();
+
+    return uidStr;
+  }
+
+  return "FAIL";
+}
+
+
+void printDebug(String str) {
+  str.replace("\"", "\\\"");  // Escapa comillas
+  Serial.println("{\"debug\": \"" + str + "\"}");
+}
+
+float avgAnalog(uint8_t PIN, int iter) {
+
+  float avg = 0;
+  float value = 0;
+
+  for (int i = 0; i < iter; i++) {
+    value = analogRead(PIN);
+    Serial.println("Lectura: " + String(value));
+    avg += value;
+    delay(50);
+  }
+
+  return avg / iter;
+}
 
 
 void pagwebDebug(String str) {
@@ -144,7 +215,7 @@ void loop() {
             String addrStr = "null";
             String status = "FAIL";
 
-            unsigned long timeout_ms = 2000;  // Tiempo máximo de espera (3 segundos)
+            unsigned long timeout_ms = 5000;  // Tiempo máximo de espera (3 segundos)
             unsigned long startTime = millis();
 
             // Bucle de reintentos basado en tiempo
@@ -260,19 +331,22 @@ void loop() {
             // ==== Bloque de GPIO ADC ====
             bool statusADC = false;
             digitalWrite(SWITCHPA4, HIGH);
+            delay(50);  // Es buena práctica dar un pequeño tiempo para que el hardware estabilice el pin
 
             String resultado1 = deviceManager.cmdReadPA4(address, 1);  // Lectura inicial HIGH
-            int pos1 = resultado1.lastIndexOf('(');
-            int valor1 = resultado1.substring(pos1 + 1, pos1 + 2).toInt();  // valor = 1
+            int pos1 = resultado1.lastIndexOf(':');
+            // Extraemos todo lo que hay después de los ':' y toInt() ignora los espacios en blanco
+            int valor1 = resultado1.substring(pos1 + 1).toInt();
 
             digitalWrite(SWITCHPA4, LOW);
             delay(500);
 
             String resultado2 = deviceManager.cmdReadPA4(address, 1);  // Lectura final LOW
-            int pos2 = resultado2.lastIndexOf('(');
-            int valor2 = resultado2.substring(pos2 + 1, pos2 + 2).toInt();  // valor = 1
+            int pos2 = resultado2.lastIndexOf(':');
+            int valor2 = resultado2.substring(pos2 + 1).toInt();
             digitalWrite(SWITCHPA4, HIGH);
 
+            // Validamos que el estado haya cambiado correctamente
             if (valor1 != valor2) {
               statusADC = true;
             }
@@ -331,90 +405,23 @@ void loop() {
 }
 
 
-String scanDirection(String resultado) {
-  int okPos = resultado.indexOf("[OK]");
-  if (okPos != -1) {
-    // Buscar "0x" SOLO después de la línea [OK]
-    int dirPos = resultado.indexOf("0x", okPos);
-    if (dirPos != -1) {
-      // Buscar el siguiente espacio o salto de línea
-      int fin = resultado.indexOf(' ', dirPos);
-      if (fin == -1) fin = resultado.indexOf('\n', dirPos);
-      if (fin == -1) fin = resultado.length();  // Por si es el último caracter
-
-      String address = resultado.substring(dirPos, fin);
-      address.trim();  // Limpiar saltos de línea (\r\n) invisibles
-
-      Serial.println("Direccion encontrada: " + address);
-      return address;
-    }
-  }
-
-  // Si no hay [OK] o no hay "0x", estandarizamos la salida de error a "null"
-  return "null";
-}
-
-String extraerUID(String resultado) {
-  // Buscamos la etiqueta exacta que imprime el monitor serie
-  String etiqueta = "UID (32-bit): ";
-  int posInicial = resultado.indexOf(etiqueta);
-
-  if (posInicial != -1) {
-    // Calculamos dónde empieza el valor hexadecimal
-    int inicioValor = posInicial + etiqueta.length();
-
-    // Buscamos el salto de línea que marca el final de esa fila
-    int finValor = resultado.indexOf('\n', inicioValor);
-    if (finValor == -1) finValor = resultado.length();  // Por si es la última línea
-
-    // Recortamos el valor y lo limpiamos de espacios o retornos de carro (\r)
-    String uidStr = resultado.substring(inicioValor, finValor);
-    uidStr.trim();
-
-    return uidStr;
-  }
-
-  return "FAIL";
-}
-
-
-void printDebug(String str) {
-  str.replace("\"", "\\\"");  // Escapa comillas
-  Serial.println("{\"debug\": \"" + str + "\"}");
-}
-
-float avgAnalog(uint8_t PIN, int iter) {
-
-  float avg = 0;
-  float value = 0;
-
-  for (int i = 0; i < iter; i++) {
-    value = analogRead(PIN);
-    Serial.println("Lectura: " + String(value));
-    avg += value;
-    delay(50);
-  }
-
-  return avg / iter;
-}
 
 
 void showBanner() {
   Serial.println("\n===========================================");
-  Serial.println("    MAP CONTROLLER - Complete Example     ");
+  Serial.println(" DEVLAB MAP CONTROLLER - Complete Example ");
   Serial.println("   I2C Device Manager & Testing System   ");
-  Serial.println("  Compatible with PY32F003 v6.0.0_lite  ");
+  Serial.println("  Compatible with PY32F003 v6.0.4  ");
   Serial.println("===========================================");
   Serial.println("Features:");
   Serial.println("✓ Device scanning & compatibility check");
   Serial.println("✓ Continuous testing with statistics");
   Serial.println("✓ I2C address management");
-  Serial.println("✓ PWM/Buzzer control + Musical tones 🎵");
-  Serial.println("✓ System alerts (SUCCESS/OK/WARN/ALERT) 🔔");
+  Serial.println("✓ PWM basic control");
   Serial.println("✓ NeoPixel control");
   Serial.println("✓ Sensor reading (PA4, ADC)");
   Serial.println("✓ Device information & UID");
-  Serial.println("✓ Security: Relay commands 0xA0-0xAF ⚠️");
+  Serial.println("✓ Security: Relay commands 0xA0-0xAF");
   Serial.println("===========================================\n");
 }
 
@@ -434,27 +441,25 @@ void showMenu() {
   Serial.println("'test-start pa4'    = Test continuo lectura PA4");
   Serial.println("'test-start toggle' = Test continuo toggle");
   Serial.println("'test-start neo'    = Test continuo NeoPixels");
-  Serial.println("'test-start pwm'    = Test continuo PWM/buzzer");
-  Serial.println("'test-start music'  = 🎵 Test escala musical (v6.0.0)");
-  Serial.println("'test-start alerts' = 🔔 Test alertas sistema (v6.0.0)");
-  Serial.println("'test-start gradual'= 📈 Test PWM gradual (v6.0.0)");
+  Serial.println("'test-start pwm'    = Test continuo PWM");
+  Serial.println("'test-start adc'    = Test continuo ADC PA0");
   Serial.println("'test-stop'         = Detener test continuo");
   Serial.println("'interval 1000'     = Cambiar intervalo test (ms)");
   Serial.println("");
   Serial.println("=== CONTROL DE DISPOSITIVOS ===");
   Serial.println("'relay 0x20 on'     = Encender rele");
   Serial.println("'relay 0x20 off'    = Apagar rele");
-  Serial.println("'toggle 0x20'       = Pulso de rele (toggle)");
+  Serial.println("'toggle 0x20'       = Ejecutar pulso de relay");
+  Serial.println("'pulse 0x20 05'     = Guardar tiempo pulso relay: bloque hex 01..28");
+  Serial.println("'time 0x20 05'      = Alias de pulse");
+  Serial.println("'gettime 0x20'      = Leer tiempo pulso relay guardado");
   Serial.println("'neo 0x20 red'      = NeoPixels rojos");
+  Serial.println("'neo 0x20 1'        = Neo slot 1 (RED preset guardado)");
   Serial.println("'neo 0x20 white'    = NeoPixels blancos");
   Serial.println("'neo 0x20 off'      = Apagar NeoPixels");
   Serial.println("'pwm 0x20 25'       = PWM 25% (200Hz)");
   Serial.println("'pwm 0x20 100'      = PWM 100% (2kHz)");
   Serial.println("'pwm 0x20 off'      = PWM silencio");
-  Serial.println("'tone 0x20 do'      = 🎵 Tocar nota DO (261Hz)");
-  Serial.println("'tone 0x20 la'      = 🎵 Tocar nota LA (440Hz)");
-  Serial.println("'alert 0x20 ok'     = 🔔 Alerta OK (1000Hz)");
-  Serial.println("'alert 0x20 warn'   = ⚠️ Alerta WARNING (1200Hz)");
   Serial.println("");
   Serial.println("=== SENSORES ===");
   Serial.println("'pa4 0x20'          = Leer entrada digital PA4");
@@ -472,6 +477,7 @@ void showMenu() {
   Serial.println("'factory 0x20'      = Factory reset a UID");
   Serial.println("'reset 0x20'        = Reiniciar dispositivo");
   Serial.println("'status 0x20'       = Estado I2C (Flash/UID)");
+  Serial.println("'save_color <id|addr> <slot> <r> <g> <b>' = Guardar color default por slot");
   Serial.println("===============================================");
   Serial.println("Ejemplos:");
   Serial.println("  scan               (escanear bus)");
@@ -479,10 +485,19 @@ void showMenu() {
   Serial.println("  test-start toggle  (test automatico)");
   Serial.println("  relay 0x20 on      (encender rele)");
   Serial.println("  neo 0x20 blue      (NeoPixels azules)");
+  Serial.println("  neo 0x20 1         (Neo slot 1 = RED preset)");
   Serial.println("===============================================");
 }
 
 void processCommand(String cmd) {
+  // Accept common typos/aliases used in field.
+  if (cmd.startsWith("save_colo ")) {
+    cmd = "save_color " + cmd.substring(10);
+  }
+  if (cmd.startsWith("assing ")) {
+    cmd = "assign " + cmd.substring(7);
+  }
+
   // Basic management commands
   if (cmd == "scan" || cmd == "s") {
     deviceManager.scanDevices(1);
@@ -492,6 +507,31 @@ void processCommand(String cmd) {
 
   } else if (cmd == "menu" || cmd == "m") {
     showMenu();
+
+    // Mapping commands (CRUD)
+  } else if (cmd == "map" || cmd == "ls") {
+    deviceManager.cmdShowMapping(1);
+
+  } else if (cmd == "automap" || cmd == "am") {
+    deviceManager.cmdAutoMap(1);
+
+  } else if (cmd.startsWith("assign ")) {
+    deviceManager.cmdAssign(cmd, 1);
+
+  } else if (cmd.startsWith("mv ")) {
+    deviceManager.cmdMove(cmd, 1);
+
+  } else if (cmd.startsWith("rm ")) {
+    deviceManager.cmdRemove(cmd, 1);
+
+  } else if (cmd == "clear map") {
+    deviceManager.clearMapping(1);
+
+  } else if (cmd == "save") {
+    deviceManager.saveMapping(1);
+
+  } else if (cmd == "load") {
+    deviceManager.loadMapping(1);
 
   } else if (cmd == "stats") {
     deviceManager.showStatistics(1);
@@ -514,32 +554,24 @@ void processCommand(String cmd) {
     Serial.println("[OK] Modo demo detenido.");
 
   } else if (cmd == "test-start pa4") {
-    deviceManager.startContinuousTest(MapController::TEST_MODE_PA4_ONLY);
+    deviceManager.startContinuousTest(DevLab_MapController::TEST_MODE_PA4_ONLY);
     Serial.println("[OK] Test continuo PA4 iniciado");
 
   } else if (cmd == "test-start toggle") {
-    deviceManager.startContinuousTest(MapController::TEST_MODE_TOGGLE_ONLY);
+    deviceManager.startContinuousTest(DevLab_MapController::TEST_MODE_TOGGLE_ONLY);
     Serial.println("[OK] Test continuo toggle iniciado");
 
   } else if (cmd == "test-start neo") {
-    deviceManager.startContinuousTest(MapController::TEST_MODE_NEO_CYCLE);
+    deviceManager.startContinuousTest(DevLab_MapController::TEST_MODE_NEO_CYCLE);
     Serial.println("[OK] Test continuo NeoPixels iniciado");
 
   } else if (cmd == "test-start pwm") {
-    deviceManager.startContinuousTest(MapController::TEST_MODE_PWM_TONES);
+    deviceManager.startContinuousTest(DevLab_MapController::TEST_MODE_PWM_CYCLE);
     Serial.println("[OK] Test continuo PWM iniciado");
 
-  } else if (cmd == "test-start music") {
-    deviceManager.startContinuousTest(MapController::TEST_MODE_MUSICAL_SCALE);
-    Serial.println("[OK] 🎵 Test escala musical DO-SI iniciado (v6.0.0_lite)");
-
-  } else if (cmd == "test-start alerts") {
-    deviceManager.startContinuousTest(MapController::TEST_MODE_ALERTS);
-    Serial.println("[OK] 🔔 Test alertas sistema iniciado (v6.0.0_lite)");
-
-  } else if (cmd == "test-start gradual") {
-    deviceManager.startContinuousTest(MapController::TEST_MODE_PWM_GRADUAL);
-    Serial.println("[OK] 📈 Test PWM gradual 100Hz-1000Hz iniciado (v6.0.0_lite)");
+  } else if (cmd == "test-start adc") {
+    deviceManager.startContinuousTest(DevLab_MapController::TEST_MODE_ADC_PA0);
+    Serial.println("[OK] Test continuo ADC iniciado");
 
   } else if (cmd == "test-stop") {
     deviceManager.stopContinuousTest();
@@ -562,17 +594,17 @@ void processCommand(String cmd) {
       deviceManager.cmdToggle(address, 1);
     }
 
+  } else if (cmd.startsWith("pulse ") || cmd.startsWith("time ") || cmd.startsWith("pulso ")) {
+    parsePulseCommand(cmd);
+
+  } else if (cmd.startsWith("gettime ")) {
+    parseGetTimeCommand(cmd);
+
   } else if (cmd.startsWith("neo ")) {
     parseNeoCommand(cmd);
 
   } else if (cmd.startsWith("pwm ")) {
     parsePWMCommand(cmd);
-
-  } else if (cmd.startsWith("tone ")) {
-    parseToneCommand(cmd);
-
-  } else if (cmd.startsWith("alert ")) {
-    parseAlertCommand(cmd);
 
     // Sensor commands
   } else if (cmd.startsWith("pa4 ")) {
@@ -650,6 +682,10 @@ void processCommand(String cmd) {
       deviceManager.checkI2CStatus(address, 1);
     }
 
+  } else if (cmd.startsWith("save_color ")) {
+    // Accepts mapped ID or direct I2C address: save_color <id|addr> <slot 1..3> <r> <g> <b>
+    deviceManager.cmdSaveColor(cmd, 1);
+
   } else if (cmd.length() > 0) {
     Serial.println("ERROR: Comando no reconocido. Usa 'menu' para ver comandos disponibles.");
   }
@@ -681,13 +717,55 @@ void parseRelayCommand(String cmd) {
   }
 }
 
-void parseNeoCommand(String cmd) {
-  // Parse: "neo 0x20 red/green/blue/white/off"
+void parsePulseCommand(String cmd) {
+  // Parse: "pulse 0x20 01..28", hexadecimal 25ms blocks for relay pulse time.
   int first_space = cmd.indexOf(' ');
   int second_space = cmd.indexOf(' ', first_space + 1);
 
   if (first_space == -1 || second_space == -1) {
-    Serial.println("ERROR: Formato: neo <address> red/green/blue/white/off");
+    Serial.println("ERROR: Formato: pulse <address> <bloque_hex 01..28>");
+    return;
+  }
+
+  String addr_str = cmd.substring(first_space + 1, second_space);
+  String block_str = cmd.substring(second_space + 1);
+  block_str.trim();
+
+  uint8_t address = deviceManager.parseAddress(addr_str);
+  char* endptr;
+  long block = strtol(block_str.c_str(), &endptr, 16);
+  if (address == 0) return;
+
+  if (*endptr != '\0' || block < 0x01 || block > 0x28) {
+    Serial.println("ERROR: bloque invalido. Usa hex 01..28");
+    return;
+  }
+
+  uint16_t duration_ms = (uint16_t)block * 25;
+  deviceManager.cmdSetToggleTime(address, duration_ms, 1);
+}
+
+void parseGetTimeCommand(String cmd) {
+  // Parse: "gettime 0x20", reads stored relay pulse time.
+  String addr_str = cmd.substring(8);
+  addr_str.trim();
+
+  uint8_t address = deviceManager.parseAddress(addr_str);
+  if (address == 0) {
+    Serial.println("ERROR: Direccion invalida");
+    return;
+  }
+
+  deviceManager.cmdGetToggleTime(address, 1);
+}
+
+void parseNeoCommand(String cmd) {
+  // Parse: "neo 0x20 red/green/blue/white/off" or "neo 0x20 1/2/3/4/0"
+  int first_space = cmd.indexOf(' ');
+  int second_space = cmd.indexOf(' ', first_space + 1);
+
+  if (first_space == -1 || second_space == -1) {
+    Serial.println("ERROR: Formato: neo <address> red/green/blue/white/off o 1/2/3/4/0");
     return;
   }
 
@@ -700,16 +778,26 @@ void parseNeoCommand(String cmd) {
 
   if (color == "red") {
     deviceManager.cmdNeoRed(address, 1);
+  } else if (color == "1") {
+    deviceManager.cmdNeoRed(address, 1);
   } else if (color == "green") {
+    deviceManager.cmdNeoGreen(address, 1);
+  } else if (color == "2") {
     deviceManager.cmdNeoGreen(address, 1);
   } else if (color == "blue") {
     deviceManager.cmdNeoBlue(address, 1);
+  } else if (color == "3") {
+    deviceManager.cmdNeoBlue(address, 1);
   } else if (color == "white") {
+    deviceManager.cmdNeoWhite(address, 1);
+  } else if (color == "4") {
     deviceManager.cmdNeoWhite(address, 1);
   } else if (color == "off") {
     deviceManager.cmdNeoOff(address, 1);
+  } else if (color == "0") {
+    deviceManager.cmdNeoOff(address, 1);
   } else {
-    Serial.println("ERROR: Usar red/green/blue/white/off");
+    Serial.println("ERROR: Usar red/green/blue/white/off o 1/2/3/4/0");
   }
 }
 
@@ -742,72 +830,6 @@ void parsePWMCommand(String cmd) {
     deviceManager.cmdPWM100(address, 1);
   } else {
     Serial.println("ERROR: Usar off/25/50/75/100");
-  }
-}
-
-void parseToneCommand(String cmd) {
-  // Parse: "tone 0x20 do/re/mi/fa/sol/la/si"
-  int first_space = cmd.indexOf(' ');
-  int second_space = cmd.indexOf(' ', first_space + 1);
-
-  if (first_space == -1 || second_space == -1) {
-    Serial.println("ERROR: Formato: tone <address> do/re/mi/fa/sol/la/si");
-    return;
-  }
-
-  String addr_str = cmd.substring(first_space + 1, second_space);
-  String note = cmd.substring(second_space + 1);
-  note.toLowerCase();
-
-  uint8_t address = deviceManager.parseAddress(addr_str);
-  if (address == 0) return;
-
-  if (note == "do") {
-    deviceManager.cmdToneDo(address, 1);
-  } else if (note == "re") {
-    deviceManager.cmdToneRe(address, 1);
-  } else if (note == "mi") {
-    deviceManager.cmdToneMi(address, 1);
-  } else if (note == "fa") {
-    deviceManager.cmdToneFa(address, 1);
-  } else if (note == "sol") {
-    deviceManager.cmdToneSol(address, 1);
-  } else if (note == "la") {
-    deviceManager.cmdToneLa(address, 1);
-  } else if (note == "si") {
-    deviceManager.cmdToneSi(address, 1);
-  } else {
-    Serial.println("ERROR: Usar do/re/mi/fa/sol/la/si");
-  }
-}
-
-void parseAlertCommand(String cmd) {
-  // Parse: "alert 0x20 success/ok/warn/critical"
-  int first_space = cmd.indexOf(' ');
-  int second_space = cmd.indexOf(' ', first_space + 1);
-
-  if (first_space == -1 || second_space == -1) {
-    Serial.println("ERROR: Formato: alert <address> success/ok/warn/critical");
-    return;
-  }
-
-  String addr_str = cmd.substring(first_space + 1, second_space);
-  String alert = cmd.substring(second_space + 1);
-  alert.toLowerCase();
-
-  uint8_t address = deviceManager.parseAddress(addr_str);
-  if (address == 0) return;
-
-  if (alert == "success") {
-    deviceManager.cmdSuccess(address, 1);
-  } else if (alert == "ok") {
-    deviceManager.cmdOk(address, 1);
-  } else if (alert == "warn" || alert == "warning") {
-    deviceManager.cmdWarning(address, 1);
-  } else if (alert == "critical" || alert == "alert") {
-    deviceManager.cmdAlert(address, 1);
-  } else {
-    Serial.println("ERROR: Usar success/ok/warn/critical");
   }
 }
 
@@ -845,7 +867,7 @@ void runDemo() {
   }
 
   // Get first compatible device
-  const MapController::DeviceInfo* devices = deviceManager.getDevices();
+  const DevLab_MapController::DeviceInfo* devices = deviceManager.getDevices();
   uint8_t demo_addr = 0;
 
   for (int i = 0; i < deviceManager.getDeviceCount(); i++) {
@@ -901,6 +923,39 @@ void runDemo() {
   demoStep++;
 }
 
+void printContinuousReadings() {
+  DevLab_MapController::TestMode mode = deviceManager.getTestMode();
+  if (mode != DevLab_MapController::TEST_MODE_PA4_ONLY && mode != DevLab_MapController::TEST_MODE_ADC_PA0) {
+    return;
+  }
+
+  const DevLab_MapController::DeviceInfo* devices = deviceManager.getDevices();
+  int count = deviceManager.getDeviceCount();
+  if (count <= 0) return;
+
+  Serial.print(mode == DevLab_MapController::TEST_MODE_PA4_ONLY ? "[PA4] " : "[ADC] ");
+  bool printed = false;
+
+  for (int i = 0; i < count; i++) {
+    if (!devices[i].is_compatible) continue;
+
+    Serial.printf("0x%02X=", devices[i].address);
+    if (devices[i].consecutive_failures > 0) {
+      Serial.print("ERR");
+    } else if (mode == DevLab_MapController::TEST_MODE_PA4_ONLY) {
+      Serial.print(devices[i].last_pa4_state);
+    } else {
+      Serial.print(devices[i].last_adc_value);
+    }
+    Serial.print(' ');
+    printed = true;
+  }
+
+  if (printed) {
+    Serial.println();
+  }
+}
+
 
 
 void showHelp() {
@@ -908,7 +963,7 @@ void showHelp() {
   Serial.println("║                    FAST COMMANDS (≤2 chars)                 ║");
   Serial.println("╚══════════════════════════════════════════════════════════════╝");
   Serial.println("⚡ SYSTEM FAST:");
-  Serial.println("  sc = scan       m = map         am = automap    h = help");
+  Serial.println("  sc = scan       m = menu        am = automap    h = help");
   Serial.println("  c = clear       r = reboot");
   Serial.println("⚡ ADC FAST:");
   Serial.println("  a1 = adc 1      a2 = adc 2      a3 = adc 3      a4 = adc 4");
@@ -929,6 +984,11 @@ void showHelp() {
   Serial.println("  si <id> <addr> = set i2c        rf <id> = reset factory");
   Serial.println("  is <id> = i2c status            dr <id> = debug reset");
   Serial.println("  Example: si 1 25, rf 1, is 1, dr 1");
+  Serial.println("⚡ COLOR PRESET (NEW):");
+  Serial.println("  save_color <id|addr> <slot> <r> <g> <b>");
+  Serial.println("  slot: 1=red, 2=green, 3=blue");
+  Serial.println("  Example: save_color 1 1 0x00 0xff 0x60");
+  Serial.println("           save_color 0x20 1 0xff 0x22 0x00");
 
   Serial.println("\n╔══════════════════════════════════════════════════════════════╗");
   Serial.println("║                    STANDARD COMMANDS                        ║");
@@ -956,6 +1016,9 @@ void showHelp() {
   Serial.println("  show_all        - Overview of all 4 arrays with their current masks");
   Serial.println("  f <id>          - Send momentary relay pulse to a device by ID");
   Serial.println("  t <id>          - Toggle relay state on a device by ID");
+  Serial.println("  pulse <addr> <block> - Set relay pulse time, block hex 01..28");
+  Serial.println("  time <addr> <block>  - Alias of pulse");
+  Serial.println("  gettime <addr>       - Read stored relay pulse time");
   Serial.println("  roff            - Turn off all mapped relays");
   Serial.println("  shut            - Shutdown all mapped devices (LEDs and relays off)");
   Serial.println("\nNEOPIXEL CONTROL (uses ID mapping):");
@@ -963,6 +1026,7 @@ void showHelp() {
   Serial.println("  neo green [id]  - Set NeoPixel(s) to green");
   Serial.println("  neo blue [id]   - Set NeoPixel(s) to blue");
   Serial.println("  neo off [id]    - Turn off NeoPixel(s)");
+  Serial.println("  neo <addr> <slot> - Slot rapido: 1=red, 2=green, 3=blue, 4=white, 0=off");
   Serial.println("  red, green, blue, off - Quick color commands for all");
   Serial.println("\nADC READING (uses ID mapping - 12-bit, 3.3V reference):");
   Serial.println("  adc <id>        - Read ADC value from specific device by ID");
@@ -978,6 +1042,10 @@ void showHelp() {
   Serial.println("  i2c_status <id>        - Get device I2C configuration status");
   Serial.println("  Examples: set_i2c 1 0x25, reset_factory 1, i2c_status 1");
   Serial.println("  -----Address changes require device restart (~2s)");
+  Serial.println("  save_color <id|addr> <slot> <r> <g> <b> - Save Neo default color slot");
+  Serial.println("    slot: 1=red, 2=green, 3=blue (RGB decimal o 0x00..0xFF)");
+  Serial.println("    Example: save_color 1 1 0x00 0xff 0x60");
+  Serial.println("             save_color 0x20 1 0xff 0x22 0x00");
   Serial.println("\nDIAGNOSTIC COMMANDS:");
   Serial.println("  testcmds        - Test all command values (0x00-0xFF) to find supported ones");
   Serial.println("════════════════════════════════════════════════════════════════");

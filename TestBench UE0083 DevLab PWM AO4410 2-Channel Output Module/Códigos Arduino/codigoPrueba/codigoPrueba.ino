@@ -2,7 +2,7 @@
 
 int PWM_1 = 2;  // PWM pin 1
 int PWM_2 = 3;  // PWM pin 2
-int STEP    = 5;      // Brightness increment per step
+int STEP    = 10;      // Brightness increment per step
 
 #define RELAYA 8  // Accionamiento de Rele Fuente
 #define RELAYB 9

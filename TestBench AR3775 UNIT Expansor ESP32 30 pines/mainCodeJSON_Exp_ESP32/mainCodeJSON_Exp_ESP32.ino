@@ -92,7 +92,7 @@ void setup() {
   pinMode(RELAY11, OUTPUT);
   pinMode(RELAY22, OUTPUT);
 
-  pinMode(RUN_BUTTON, INPUT);
+  pinMode(RUN_BUTTON, INPUT_PULLDOWN);
 
   // Apagar todos los relés al inicio (HIGH = apagado)
   digitalWrite(RELAYCom, LOW);
@@ -117,8 +117,8 @@ void loop() {
     if (digitalRead(RUN_BUTTON) == LOW) {
       Serial.println("Arranque por botonera");
       enviarJSON["Run"] = "OK";           // Envio de corriente JSON para corto
-      serializeJson(enviarJSON, PagWeb);  // Envío de datos por JSON a la PagWeb
-      PagWeb.println();
+      serializeJson(enviarJSON, Serial);  // Envío de datos por JSON a la PagWeb
+      Serial.println();
     }
   }
 

@@ -47,20 +47,28 @@ void serialDebug(String str) {
   Serial.println();
 }
 
-// ---- Función para leer registro de MAX17048 ----
+// ---- Función segura para leer registro de MAX17048 ----
 uint16_t readRegister16(uint8_t reg) {
   Wire.beginTransmission(MAX17048_ADDR);
   Wire.write(reg);
-  Wire.endTransmission(false);  // Restart para mantener el bus
 
-  Wire.requestFrom(MAX17048_ADDR, 2);
+  // Guardamos el resultado de la transmisión. Si no es 0, hubo un error (ej. NACK o desconexión)
+  uint8_t error = Wire.endTransmission(false);
 
-  if (Wire.available() == 2) {
+  if (error != 0) {
+    return 0;  // Escapamos inmediatamente si el MAX no responde
+  }
+
+  // Si respondió, entonces sí le pedimos los 2 bytes
+  uint8_t bytesReceived = Wire.requestFrom((uint16_t)MAX17048_ADDR, (uint8_t)2);
+
+  if (bytesReceived == 2) {
     uint16_t msb = Wire.read();
     uint16_t lsb = Wire.read();
     return (msb << 8) | lsb;
   }
-  return 0;
+
+  return 0;  // Retorna 0 si no entregó los bytes completos
 }
 
 float readVoltage() {
@@ -73,12 +81,21 @@ float readSOC() {
   return rawSoc / 256.0;
 }
 
-void sendQuickStart() {
+// ---- Función segura de QuickStart ----
+bool sendQuickStart() {
   Wire.beginTransmission(MAX17048_ADDR);
   Wire.write(REG_MODE);
   Wire.write(0x40);  // MSB del comando 0x4000
   Wire.write(0x00);  // LSB del comando 0x4000
-  Wire.endTransmission();
+
+  // endTransmission devuelve 0 si el esclavo respondió correctamente (ACK)
+  uint8_t error = Wire.endTransmission();
+
+  if (error == 0) {
+    return true;  // Comunicación exitosa
+  } else {
+    return false;  // Fallo en la comunicación (target desconectado o error de bus)
+  }
 }
 
 /**
@@ -113,16 +130,70 @@ float current_out() {
   return current_A;
 }
 
+
+/**
+ * @brief Rutina de recuperación de hardware para destrabar el bus I2C.
+ * Obliga a cualquier esclavo colgado a soltar la línea SDA.
+ */
+void recoverI2CBus() {
+  serialDebug("Iniciando recuperacion del bus I2C...");
+
+  // 1. Desactivamos el hardware I2C del ESP32 para tomar control manual
+  Wire.end();
+
+  // 2. Configuramos los pines como I/O estándar
+  pinMode(SDA_PIN, INPUT_PULLUP);
+  pinMode(SCL_PIN, OUTPUT);
+  digitalWrite(SCL_PIN, HIGH);
+  delay(1);
+
+  // 3. Verificamos si alguien está forzando SDA a LOW
+  if (digitalRead(SDA_PIN) == LOW) {
+    serialDebug("SDA detectado en LOW. Enviando pulsos de reloj para destrabar...");
+
+    // Enviamos hasta 9 pulsos de reloj (es lo máximo que dura un byte + ACK)
+    for (int i = 0; i < 9; i++) {
+      digitalWrite(SCL_PIN, LOW);
+      delayMicroseconds(10);
+      digitalWrite(SCL_PIN, HIGH);
+      delayMicroseconds(10);
+
+      // Si el esclavo ya soltó la línea (SDA = HIGH), ya no necesitamos más pulsos
+      if (digitalRead(SDA_PIN) == HIGH) {
+        break;
+      }
+    }
+  }
+
+  // 4. Generamos una condición de STOP manual (SCL alto, luego SDA de bajo a alto)
+  pinMode(SDA_PIN, OUTPUT);
+  digitalWrite(SDA_PIN, LOW);
+  delayMicroseconds(10);
+  digitalWrite(SCL_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(SDA_PIN, HIGH);
+  delay(5);
+
+  // 5. Reiniciamos el hardware I2C y reinstalamos el Timeout
+  Wire.begin(SDA_PIN, SCL_PIN);
+  Wire.setTimeOut(50);
+  serialDebug("Bus I2C reiniciado.");
+}
+
 void setup() {
   Serial.begin(115200);
   delay(100);
   serialDebug("Serial initialized...");
 
   Wire.begin(SDA_PIN, SCL_PIN);
+  Wire.setTimeOut(50);
+
+  if (!ina219_in.begin(&Wire)) {
+    serialDebug("Current sensor INA219_out 0x40 no initilized...");
+  }
 
   if (!ina219_out.begin(&Wire)) {
     serialDebug("Current sensor INA219_out 0x41 no initilized...");
-    while (1) { delay(10); }
   }
 
   // ---- Configuración de GPIOS ----
@@ -157,7 +228,7 @@ void loop() {
       int opc = 0;
       if (Function == "ping") opc = 1;                // {"Function": "ping"}
       else if (Function == "monitorMax") opc = 2;     // {"Function": "monitorMax"}
-      else if (Function == "sensorCurrent") opc = 3;  // {"Function": "sensorCurrent"}
+      else if (Function == "currentSensor") opc = 3;  // {"Function": "currentSensor"}
 
       switch (opc) {
         case 1:
@@ -172,16 +243,40 @@ void loop() {
         case 2:
           {
             sendJSON.clear();
-            sendQuickStart();
+            bool commStatus = sendQuickStart();
+            delay(100);
 
-            float voltage = readVoltage();
-            float soc = readSOC();
+            // Si el primero funcionó, mandamos el segundo
+            if (commStatus) {
+              commStatus = sendQuickStart();
+              delay(500);
+              float voltage = readVoltage();
+              float soc = readSOC();
 
-            if (soc > 100 || soc < 40) sendJSON["error"] = "Floating VBAT Terminal...";
-            else {
-              if (voltage > 3.2 && voltage < 4.3) sendJSON["Result"] = "OK";
+              if (soc > 100 || soc < 40) {
+                sendJSON["error"] = "Floating VBAT Terminal...";
+                sendJSON["Result"] = "FAIL";  // Reforzamos el FAIL para tu front
+              } else {
+                if (voltage > 3.2 && voltage < 4.3) {
+                  sendJSON["Result"] = "OK";
+                } else {
+                  sendJSON["Result"] = "FAIL";  // Voltaje fuera de rango
+                }
+              }
+
+              // Asignamos las variables solo si hubo comunicación
               sendJSON["voltage"] = voltage;
               sendJSON["SOC"] = soc;
+
+            } else {
+              recoverI2CBus();
+
+              // Si NO hubo comunicación con el MAX
+              sendJSON["Result"] = "FAIL";
+              sendJSON["error"] = "No device MAX17048 found";
+              // Opcional: mandar 0 para que el front no se quede con basura
+              sendJSON["voltage"] = 0.0;
+              sendJSON["SOC"] = 0.0;
             }
 
             serializeJson(sendJSON, Serial);
@@ -192,8 +287,14 @@ void loop() {
         case 3:
           {
             sendJSON.clear();
-            corrienteSensor = current_out();
-            serialDebug("Corriente = " + String(corrienteSensor, 3));
+            corrienteSensor = abs(current_in());
+            float corrienteOut = current_out();
+            //serialDebug("Corriente = " + String(corrienteSensor, 3));
+            if (corrienteSensor > 0.180 && corrienteSensor < 0.25) sendJSON["Result"] = "OK";
+            sendJSON["currentSensor"] = String(corrienteSensor) + " A";
+            sendJSON["currentOut"] = String(corrienteOut) + " A";
+            serializeJson(sendJSON, Serial);
+            Serial.println();
             break;
           }
       }
