@@ -1,5 +1,5 @@
 /*
- 
+ Hay que reiniciar el monitor serie en caso de dejar colgado el bus i2c ante una falla por el target
 */
 
 // ====   BIBLIOTECAS ====
@@ -187,28 +187,69 @@ void recoverI2CBus() {
   serialDebug("Bus I2C reiniciado.");
 }
 
+
+/**
+ * @brief Revisa el estado de la línea SDA antes de iniciar una transacción.
+ * Si el target conectó en caliente y colgó el bus, lanza la recuperación.
+ */
+void checkAndClearBusPreemptively() {
+  // Desactivamos I2C un microsegundo para leer el estado físico real
+  Wire.end();
+  pinMode(SDA_PIN, INPUT_PULLUP);
+
+  if (digitalRead(SDA_PIN) == LOW) {
+    serialDebug("⚠️ ADVERTENCIA: Bus I2C colgado por Hot-Plug del target. Limpiando bus...");
+    // Volvemos a inicializar los pines como salidas para la recuperación
+    pinMode(SDA_PIN, OUTPUT);
+    pinMode(SCL_PIN, OUTPUT);
+
+    // Disparamos los 9 pulsos de reloj para destrabar al esclavo
+    for (int i = 0; i < 9; i++) {
+      digitalWrite(SCL_PIN, LOW);
+      delayMicroseconds(10);
+      digitalWrite(SCL_PIN, HIGH);
+      delayMicroseconds(10);
+      pinMode(SDA_PIN, INPUT_PULLUP);  // Leemos si ya soltó
+      if (digitalRead(SDA_PIN) == HIGH) break;
+      pinMode(SDA_PIN, OUTPUT);
+    }
+
+    // Condición de STOP manual
+    digitalWrite(SDA_PIN, LOW);
+    delayMicroseconds(10);
+    digitalWrite(SCL_PIN, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(SDA_PIN, HIGH);
+  }
+
+  // Devolvemos el control al driver I2C
+  Wire.begin(SDA_PIN, SCL_PIN);
+  Wire.setTimeOut(50);
+}
+
+
 void setup() {
-  Serial.begin(115200);                                        // Comunicación serial para depuración
-  PagWeb.begin(115200, SERIAL_8N1, RX2, TX2);                  // UART para interfaz web
+  Serial.begin(115200);                        // Comunicación serial para depuración
+  PagWeb.begin(115200, SERIAL_8N1, RX2, TX2);  // UART para interfaz web
   delay(100);
-  
+
   serialDebug("Serial Initialized...");
   pagwebDebug("Test Multi LM2596 Initialized...");
 
   Wire.begin(SDA_PIN, SCL_PIN);
   Wire.setTimeOut(50);
 
-  // ---- NUEVO: Reset de hardware si fallan los sensores INA ----
+  // ---- CORRECCIÓN: Limpiar el bus antes de arrancar periféricos locales ----
+  recoverI2CBus();
+
   if (!ina219_in.begin(&Wire)) {
-    serialDebug("Fallo crítico: INA219_in (0x40) no inicializado. Reiniciando...");
-    delay(1000); 
-    ESP.restart(); 
+    serialDebug("Fallo crítico: INA219_in (0x40) no inicializado. Revisa hardware interno.");
+    // Eliminamos ESP.restart(); El banco debe seguir vivo para reportar el error al frontend.
   }
 
   if (!ina219_out.begin(&Wire)) {
-    serialDebug("Fallo crítico: INA219_out (0x41) no inicializado. Reiniciando...");
-    delay(1000);
-    ESP.restart();
+    serialDebug("Fallo crítico: INA219_out (0x41) no inicializado. Revisa hardware interno.");
+    // Eliminamos ESP.restart();
   }
 
   // ---- Configuración de GPIOS ----
@@ -216,8 +257,8 @@ void setup() {
   pinMode(RELAYA, OUTPUT);
   pinMode(RELAYB, OUTPUT);
 
-  digitalWrite(RELAYA, LOW);  // >> Relevador de Fuente ON (Activo BAJAS)
-  digitalWrite(RELAYB, LOW);  // >> Relevador de Fuente ON (Activo BAJAS)
+  digitalWrite(RELAYA, HIGH);  // >> Relevador de Fuente ON (Activo BAJAS)
+  digitalWrite(RELAYB, HIGH);  // >> Relevador de Fuente ON (Activo BAJAS)
   delay(500);
 }
 
@@ -254,24 +295,31 @@ void loop() {
           {
             sendJSON.clear();
             sendJSON["ping"] = "pong";
-            
+
             // ---- MODIFICADO: Envío por UART2 (PagWeb) ----
             serializeJson(sendJSON, PagWeb);
             PagWeb.println();
-            
+
             // Opcional: También imprimir en Serial de depuración
             serializeJson(sendJSON, Serial);
             Serial.println();
-            
+
             break;
           }
 
         case 2:
           {
-            sendJSON.clear();
+            digitalWrite(RELAYA, LOW);  // >> Relevador de Fuente ON (Activo BAJAS)
+            digitalWrite(RELAYB, LOW);  // >> Relevador de Fuente ON (Activo BAJAS)
+            delay(1000);
 
-            // 1. Verificamos pasivamente el estado de conexión del target
+
+            // ---- DEFENSA PREEMPTIVA ----
+            checkAndClearBusPreemptively();
+
+            sendJSON.clear();
             Wire.beginTransmission(MAX17048_ADDR);
+            // ... resto de tu código ...
             uint8_t busStatus = Wire.endTransmission();
 
             if (busStatus == 0) {
@@ -305,12 +353,12 @@ void loop() {
                 sendJSON["error"] = "Transaction failed mid-process";
                 sendJSON["voltage"] = 0.0;
                 sendJSON["SOC"] = 0.0;
-                
-                // ---- NUEVO: Reset si el dispositivo se colgó en plena transacción ----
+
                 serializeJson(sendJSON, PagWeb);
                 PagWeb.println();
+
+                // Solo recuperamos el bus, SIN reiniciar el ESP32
                 recoverI2CBus();
-                ESP.restart();
               }
 
             } else {
@@ -322,30 +370,27 @@ void loop() {
 
               // SOLO disparamos la recuperación agresiva si el error sugiere
               // un bus trabado (ej. código 4 o 5 en ESP32).
-              // Si es código 2 (NACK), el bus está sano, solo falta el target.
               if (busStatus != 2) {
                 recoverI2CBus();
               }
-              
-              // Enviamos la respuesta de error ANTES de reiniciar
+
+              // Enviamos la respuesta de error para que el frontend la procese
               serializeJson(sendJSON, PagWeb);
               PagWeb.println();
-              
-              // Opcional debug local
+
               serializeJson(sendJSON, Serial);
               Serial.println();
-              
-              ESP.restart();
             }
 
             // 4. Respondemos siempre al frontend sin colgar el hilo
-            // (Si no entramos a los casos de restart anteriores)
-            serializeJson(sendJSON, PagWeb);
-            PagWeb.println();
-            
-            serializeJson(sendJSON, Serial);
-            Serial.println();
-            
+            if (busStatus == 0 && sendJSON.containsKey("voltage")) {
+              serializeJson(sendJSON, PagWeb);
+              PagWeb.println();
+
+              serializeJson(sendJSON, Serial);
+              Serial.println();
+            }
+
             break;
           }
 
@@ -380,11 +425,15 @@ void loop() {
             // ---- MODIFICADO: Envío por UART2 (PagWeb) ----
             serializeJson(sendJSON, PagWeb);
             PagWeb.println();
-            
+
             // Opcional para debug local
             serializeJson(sendJSON, Serial);
             Serial.println();
-            
+
+            delay(1000);
+            digitalWrite(RELAYA, HIGH);  // >> Relevador de Fuente ON (Activo BAJAS)
+            digitalWrite(RELAYB, HIGH);  // >> Relevador de Fuente ON (Activo BAJAS)
+
             break;
           }
       }
