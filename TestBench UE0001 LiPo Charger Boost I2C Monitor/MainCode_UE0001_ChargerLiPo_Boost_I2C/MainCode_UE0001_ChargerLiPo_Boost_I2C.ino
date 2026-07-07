@@ -1,5 +1,5 @@
 /*
-
+ 
 */
 
 // ====   BIBLIOTECAS ====
@@ -15,9 +15,12 @@
 #define SCL_PIN 7     // >> GPIO07 Señal de reloj I2D SCL
 #define RELAYA 8      // >> GPIO08 Accionamiento de Relé A Fuente de Alimentación [+]
 #define RELAYB 9      // >> GPIO09 Accionamiento de Relé B Fuente de Alimentación [-]
-
+#define RX2 15        // >> GPIO15 como RX de UART2 - Recepción de datos desde interfaz web
+#define TX2 19        // >> GPIO19 como TX de UART2 - Transmisión de datos a interfaz web
 
 // ==== DECLARACIÓN DE OBJETOS ====
+HardwareSerial PagWeb(1);  // Crear objeto para UART2 en PULSAR como PagWeb
+
 String JSON_entrada;                   ///< Buffer para recibir JSON desde PagWeb
 StaticJsonDocument<1024> receiveJSON;  ///< Documento JSON para parsear datos recibidos
 
@@ -26,7 +29,6 @@ StaticJsonDocument<1024> sendJSON;  ///< Documento JSON para armar respuestas
 
 Adafruit_INA219 ina219_in(0x40);   // Sensor de corriente INA219 en entrada del testbench
 Adafruit_INA219 ina219_out(0x41);  // Sensor de corriente INA219 en salida del testbench
-
 
 // ==== DECLARACIÓN DE REGISTRO Y VARIABLES GLOBALES ====
 #define MAX17048_ADDR 0x36
@@ -38,8 +40,12 @@ const float R_SHUNT = 0.05;        // Resistencia Shunt = 50 mΩ
 float corrienteSensor = 0;         // Variable de lectura de corriente con el sensor
 float voltajeSensor = 0;           // Variable de lectura de voltaje con el sensor
 
-
 // ==== UTILIDADES ====
+void pagwebDebug(String str) {
+  str.replace("\"", "\\\"");  // Escapa comillas
+  PagWeb.println("{\"debug\": \"" + str + "\"}");
+}
+
 void serialDebug(String str) {
   StaticJsonDocument<200> debugDoc;
   debugDoc["debug"] = str;
@@ -111,8 +117,8 @@ float current_in() {
   shunt_mV -= shuntOffset_mV;
   float shunt_V = shunt_mV / 1000.0;
   float current_A = shunt_V / R_SHUNT;  // Corriente de interés
-  float load_V = bus_V + shunt_V;
-  float power_W = load_V * current_A;
+  // float load_V = bus_V + shunt_V;
+  // float power_W = load_V * current_A;
   return current_A;
 }
 
@@ -127,11 +133,10 @@ float current_out() {
   shunt_mV -= shuntOffset_mV;
   float shunt_V = shunt_mV / 1000.0;
   float current_A = shunt_V / R_SHUNT;  // Corriente de interés
-  float load_V = bus_V + shunt_V;
-  float power_W = load_V * current_A;
+  // float load_V = bus_V + shunt_V;
+  // float power_W = load_V * current_A;
   return current_A;
 }
-
 
 /**
  * @brief Rutina de recuperación de hardware para destrabar el bus I2C.
@@ -183,19 +188,27 @@ void recoverI2CBus() {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(115200);                                        // Comunicación serial para depuración
+  PagWeb.begin(115200, SERIAL_8N1, RX2, TX2);                  // UART para interfaz web
   delay(100);
-  serialDebug("Serial initialized...");
+  
+  serialDebug("Serial Initialized...");
+  pagwebDebug("Test Multi LM2596 Initialized...");
 
   Wire.begin(SDA_PIN, SCL_PIN);
   Wire.setTimeOut(50);
 
+  // ---- NUEVO: Reset de hardware si fallan los sensores INA ----
   if (!ina219_in.begin(&Wire)) {
-    serialDebug("Current sensor INA219_out 0x40 no initilized...");
+    serialDebug("Fallo crítico: INA219_in (0x40) no inicializado. Reiniciando...");
+    delay(1000); 
+    ESP.restart(); 
   }
 
   if (!ina219_out.begin(&Wire)) {
-    serialDebug("Current sensor INA219_out 0x41 no initilized...");
+    serialDebug("Fallo crítico: INA219_out (0x41) no inicializado. Reiniciando...");
+    delay(1000);
+    ESP.restart();
   }
 
   // ---- Configuración de GPIOS ----
@@ -210,18 +223,22 @@ void setup() {
 
 void loop() {
 
+  // ==== Manejo del botón de arranque ====
   if (digitalRead(RUN_BUTTON) == HIGH) {
-    sendJSON.clear();
-    delay(100);
+    sendJSON.clear();  // Limpia cualquier dato previo
+    delay(100);        // Debounce
+
     if (digitalRead(RUN_BUTTON) == LOW) {
-      sendJSON["Run"] = "OK";
-      serializeJson(sendJSON, Serial);
-      Serial.println();
+      serialDebug("Arranque por botonera");
+      sendJSON["Run"] = "OK";           // Envio de corriente JSON para corto
+      serializeJson(sendJSON, PagWeb);  // Envío de datos por JSON a la PagWeb
+      PagWeb.println();
     }
   }
 
-  if (Serial.available()) {
-    JSON_entrada = Serial.readStringUntil('\n');
+  if (PagWeb.available()) {
+
+    JSON_entrada = PagWeb.readStringUntil('\n');  // Leer línea completa
     DeserializationError error = deserializeJson(receiveJSON, JSON_entrada);
 
     if (!error) {
@@ -237,8 +254,15 @@ void loop() {
           {
             sendJSON.clear();
             sendJSON["ping"] = "pong";
+            
+            // ---- MODIFICADO: Envío por UART2 (PagWeb) ----
+            serializeJson(sendJSON, PagWeb);
+            PagWeb.println();
+            
+            // Opcional: También imprimir en Serial de depuración
             serializeJson(sendJSON, Serial);
             Serial.println();
+            
             break;
           }
 
@@ -264,6 +288,7 @@ void loop() {
                 if (soc > 100 || soc < 40) {
                   sendJSON["error"] = "Floating VBAT Terminal...";
                   sendJSON["Result"] = "FAIL";
+                  delay(500);
                 } else {
                   if (voltage > 3.2 && voltage < 4.3) {
                     sendJSON["Result"] = "OK";
@@ -280,6 +305,12 @@ void loop() {
                 sendJSON["error"] = "Transaction failed mid-process";
                 sendJSON["voltage"] = 0.0;
                 sendJSON["SOC"] = 0.0;
+                
+                // ---- NUEVO: Reset si el dispositivo se colgó en plena transacción ----
+                serializeJson(sendJSON, PagWeb);
+                PagWeb.println();
+                recoverI2CBus();
+                ESP.restart();
               }
 
             } else {
@@ -295,11 +326,26 @@ void loop() {
               if (busStatus != 2) {
                 recoverI2CBus();
               }
+              
+              // Enviamos la respuesta de error ANTES de reiniciar
+              serializeJson(sendJSON, PagWeb);
+              PagWeb.println();
+              
+              // Opcional debug local
+              serializeJson(sendJSON, Serial);
+              Serial.println();
+              
+              ESP.restart();
             }
 
             // 4. Respondemos siempre al frontend sin colgar el hilo
+            // (Si no entramos a los casos de restart anteriores)
+            serializeJson(sendJSON, PagWeb);
+            PagWeb.println();
+            
             serializeJson(sendJSON, Serial);
             Serial.println();
+            
             break;
           }
 
@@ -331,8 +377,14 @@ void loop() {
             sendJSON["currentSensor"] = String(corrienteSensor, 3) + " A";
             sendJSON["currentOut"] = String(corrienteOut, 3) + " A";
 
+            // ---- MODIFICADO: Envío por UART2 (PagWeb) ----
+            serializeJson(sendJSON, PagWeb);
+            PagWeb.println();
+            
+            // Opcional para debug local
             serializeJson(sendJSON, Serial);
             Serial.println();
+            
             break;
           }
       }
