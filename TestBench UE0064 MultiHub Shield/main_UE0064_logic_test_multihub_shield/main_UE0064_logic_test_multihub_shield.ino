@@ -10,6 +10,8 @@ Firmware MultiHub Shield - Parte Lógica
 #include <Adafruit_NeoPixel.h>
 
 // ==== DECLARACIÓN DE GPIOS ====
+#define SDA_PIN 6
+#define SCL_PIN 7
 #define NEOP_PIN 8     // >> GPIO08 NEOPIXEL
 #define BUTTON_PIN 20  // >> GPIO15 Lectura de botón en shield
 
@@ -26,7 +28,7 @@ void demo() {
   if (digitalRead(BUTTON_PIN) == LOW) {
     pixels.clear();
     for (int i = 0; i < NUMPIXELS; i++) {
-      pixels.setPixelColor(i, pixels.Color(0, 10, 0));
+      pixels.setPixelColor(i, pixels.Color(1, 0, 0));
       pixels.show();
       delay(DELAYVAL);
     }
@@ -34,7 +36,7 @@ void demo() {
     // ==== SECUENCIA DE NEOPIXEL ====
     pixels.clear();
     for (int i = 0; i < NUMPIXELS; i++) {
-      pixels.setPixelColor(i, pixels.Color(0, 0, 10));
+      pixels.setPixelColor(i, pixels.Color(0, 1, 0));
       pixels.show();
       delay(DELAYVAL);
     }
@@ -46,13 +48,6 @@ void setup() {
   Serial.begin(115200);
   pixels.begin();
   delay(100);
-  Wire.begin(SDA_PIN, SCL_PIN);
-
-  if (husb238.begin(HUSB238_I2CADDR_DEFAULT, &Wire)) {
-    Serial.println("HUSB238 initialized successfully.");
-  } else {
-    Serial.println("Couldn't find HUSB238, check your wiring?");
-  }
 
   // ==== Declaración de GPIOS ====
   pinMode(BUTTON_PIN, INPUT_PULLUP);

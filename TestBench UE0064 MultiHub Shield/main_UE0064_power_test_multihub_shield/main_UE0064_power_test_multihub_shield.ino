@@ -170,7 +170,7 @@ void loop() {
     else if (Function == "pwm") opc = 2;        // {"Function":"pwm", "pwm_mode":"sweep"}
     else if (Function == "sw_relay") opc = 3;   // {"Function":"sw_relay", "state_relay":"ON"}
     else if (Function == "init_husb") opc = 4;  // {"Function": "init_husb"} 
-    else if (Function == "fixed") opc = 5;      ///< {"Function": "fixed", "Value": "5"}
+    else if (Function == "fixed") opc = 5;      // {"Function": "fixed", "Value": "5"}
 
     switch (opc) {
       case 1:

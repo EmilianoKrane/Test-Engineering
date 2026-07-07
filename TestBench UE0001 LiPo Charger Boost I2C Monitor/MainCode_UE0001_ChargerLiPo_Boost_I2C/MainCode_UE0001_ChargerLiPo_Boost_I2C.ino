@@ -52,14 +52,16 @@ uint16_t readRegister16(uint8_t reg) {
   Wire.beginTransmission(MAX17048_ADDR);
   Wire.write(reg);
 
-  // Guardamos el resultado de la transmisión. Si no es 0, hubo un error (ej. NACK o desconexión)
+  // Guardamos el resultado con Repeated Start
   uint8_t error = Wire.endTransmission(false);
 
   if (error != 0) {
-    return 0;  // Escapamos inmediatamente si el MAX no responde
+    // FIX VITAL: Si falló, forzamos un STOP manual (true) para liberar la
+    // máquina de estados del ESP32 antes de escapar.
+    Wire.endTransmission(true);
+    return 0;
   }
 
-  // Si respondió, entonces sí le pedimos los 2 bytes
   uint8_t bytesReceived = Wire.requestFrom((uint16_t)MAX17048_ADDR, (uint8_t)2);
 
   if (bytesReceived == 2) {
@@ -68,7 +70,7 @@ uint16_t readRegister16(uint8_t reg) {
     return (msb << 8) | lsb;
   }
 
-  return 0;  // Retorna 0 si no entregó los bytes completos
+  return 0;
 }
 
 float readVoltage() {
@@ -243,42 +245,59 @@ void loop() {
         case 2:
           {
             sendJSON.clear();
-            bool commStatus = sendQuickStart();
-            delay(100);
 
-            // Si el primero funcionó, mandamos el segundo
-            if (commStatus) {
-              commStatus = sendQuickStart();
-              delay(500);
-              float voltage = readVoltage();
-              float soc = readSOC();
+            // 1. Verificamos pasivamente el estado de conexión del target
+            Wire.beginTransmission(MAX17048_ADDR);
+            uint8_t busStatus = Wire.endTransmission();
 
-              if (soc > 100 || soc < 40) {
-                sendJSON["error"] = "Floating VBAT Terminal...";
-                sendJSON["Result"] = "FAIL";  // Reforzamos el FAIL para tu front
-              } else {
-                if (voltage > 3.2 && voltage < 4.3) {
-                  sendJSON["Result"] = "OK";
+            if (busStatus == 0) {
+              // 2. Target presente (ACK recibido). Procedemos con la lógica.
+              bool commStatus = sendQuickStart();
+              delay(100);
+
+              if (commStatus) {
+                sendQuickStart();
+                delay(500);
+                float voltage = readVoltage();
+                float soc = readSOC();
+
+                if (soc > 100 || soc < 40) {
+                  sendJSON["error"] = "Floating VBAT Terminal...";
+                  sendJSON["Result"] = "FAIL";
                 } else {
-                  sendJSON["Result"] = "FAIL";  // Voltaje fuera de rango
+                  if (voltage > 3.2 && voltage < 4.3) {
+                    sendJSON["Result"] = "OK";
+                  } else {
+                    sendJSON["Result"] = "FAIL";  // Voltaje fuera de rango
+                  }
                 }
+
+                sendJSON["voltage"] = voltage;
+                sendJSON["SOC"] = soc;
+              } else {
+                // Fallo abrupto durante la transacción (ej. desconexión en caliente)
+                sendJSON["Result"] = "FAIL";
+                sendJSON["error"] = "Transaction failed mid-process";
+                sendJSON["voltage"] = 0.0;
+                sendJSON["SOC"] = 0.0;
               }
 
-              // Asignamos las variables solo si hubo comunicación
-              sendJSON["voltage"] = voltage;
-              sendJSON["SOC"] = soc;
-
             } else {
-              recoverI2CBus();
-
-              // Si NO hubo comunicación con el MAX
+              // 3. Target no responde o el bus falló
               sendJSON["Result"] = "FAIL";
               sendJSON["error"] = "No device MAX17048 found";
-              // Opcional: mandar 0 para que el front no se quede con basura
               sendJSON["voltage"] = 0.0;
               sendJSON["SOC"] = 0.0;
+
+              // SOLO disparamos la recuperación agresiva si el error sugiere
+              // un bus trabado (ej. código 4 o 5 en ESP32).
+              // Si es código 2 (NACK), el bus está sano, solo falta el target.
+              if (busStatus != 2) {
+                recoverI2CBus();
+              }
             }
 
+            // 4. Respondemos siempre al frontend sin colgar el hilo
             serializeJson(sendJSON, Serial);
             Serial.println();
             break;
@@ -287,12 +306,31 @@ void loop() {
         case 3:
           {
             sendJSON.clear();
-            corrienteSensor = abs(current_in());
-            float corrienteOut = current_out();
-            //serialDebug("Corriente = " + String(corrienteSensor, 3));
-            if (corrienteSensor > 0.180 && corrienteSensor < 0.25) sendJSON["Result"] = "OK";
-            sendJSON["currentSensor"] = String(corrienteSensor) + " A";
-            sendJSON["currentOut"] = String(corrienteOut) + " A";
+            float sumaIn = 0.0;
+            float sumaOut = 0.0;
+
+            // Tomamos 10 lecturas espaciadas por 200 ms
+            for (int i = 0; i < 10; i++) {
+              sumaIn += abs(current_in());
+              sumaOut += current_out();
+              delay(200);
+            }
+
+            // Calculamos el promedio y aplicamos el offset al resultado final
+            corrienteSensor = (sumaIn / 10.0) - 0.11;
+            float corrienteOut = (sumaOut / 10.0);
+
+            // Evaluación de rangos
+            if (corrienteSensor > 0.180 && corrienteSensor < 0.25) {
+              sendJSON["Result"] = "OK";
+            } else {
+              sendJSON["Result"] = "FAIL";  // Agregado: Es vital responder un FAIL explícito
+            }
+
+            // Formateo a 3 decimales fijos para evitar colas de basura flotante en el frontend
+            sendJSON["currentSensor"] = String(corrienteSensor, 3) + " A";
+            sendJSON["currentOut"] = String(corrienteOut, 3) + " A";
+
             serializeJson(sendJSON, Serial);
             Serial.println();
             break;
