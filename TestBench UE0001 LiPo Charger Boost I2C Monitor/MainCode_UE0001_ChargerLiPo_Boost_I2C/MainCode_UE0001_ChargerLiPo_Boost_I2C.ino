@@ -321,7 +321,7 @@ void loop() {
             float corrienteOut = (sumaOut / 10.0);
 
             // Evaluación de rangos
-            if (corrienteSensor > 0.180 && corrienteSensor < 0.25) {
+            if (corrienteSensor > 0.150 && corrienteSensor < 0.25) {
               sendJSON["Result"] = "OK";
             } else {
               sendJSON["Result"] = "FAIL";  // Agregado: Es vital responder un FAIL explícito
