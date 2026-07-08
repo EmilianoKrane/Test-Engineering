@@ -20,9 +20,8 @@ Este firmware se encarga de utilizar los gpios analogicos como salidas digitales
 // ==== CREACIÓN DE OBJETOS ====
 String JSON_entrada;                   ///< Buffer para recibir JSON desde PagWeb
 StaticJsonDocument<1024> receiveJSON;  ///< Documento JSON para parsear datos recibidos
-
-String JSON_salida;                 ///< Buffer para transmitir JSON de respuesta
-StaticJsonDocument<1024> sendJSON;  ///< Documento JSON para armar respuestass
+String JSON_salida;                    ///< Buffer para transmitir JSON de respuesta
+StaticJsonDocument<1024> sendJSON;     ///< Documento JSON para armar respuestass
 
 // ==== CREACIÓN DE VARIABLES GLOBALES ====
 const int GPIOS[] = { A0_PIN, A1_PIN, A2_PIN, A3_PIN, A4_PIN, A5_PIN };
@@ -66,14 +65,81 @@ void loop() {
         {
           sendJSON.clear();
           sendJSON["ping"] = "pong";
+          sendJSON["debug"] = "Hello PULSARC6!";
           serializeJson(sendJSON, Serial);
           Serial.println();
           break;
         }
 
-      case 2:
+      case 2:  // blink (Recepción ADC)
         {
+          // 1. Configurar pines como entrada (alta impedancia para el divisor)
+          for (int i = 0; i < NUM_GPIOS; i++) {
+            pinMode(GPIOS[i], INPUT);
+          }
 
+          // 2. Avisar a la PULSARC6 que el ADC está listo
+          sendJSON.clear();
+          sendJSON["status"] = "ADC_READY";
+          serializeJson(sendJSON, Serial);
+          Serial.println();
+
+          // 3. Máquina de estados para validar la señal analógica
+          int pinStates[NUM_GPIOS] = { 0 };
+          unsigned long start_time = millis();
+          bool allFinished = false;
+
+          // Ventana de tiempo de 2.5 segundos para capturar todos los blinks
+          while (millis() - start_time < 2500 && !allFinished) {
+            allFinished = true;
+            for (int i = 0; i < NUM_GPIOS; i++) {
+              if (pinStates[i] == 3) continue;  // Si este pin ya validó todo, lo saltamos
+              allFinished = false;
+
+              int raw_adc = analogRead(GPIOS[i]);
+              // Conversión asumiendo un ADC de 12-bits (ej. ESP32/RP2040)
+              float voltage = (raw_adc / 4095.0) * 3.3;
+
+              // Umbrales tolerantes para compensar caídas en el divisor de tensión
+              switch (pinStates[i]) {
+                case 0:  // Esperando asegurar que arranca en estado bajo (< 0.5V)
+                  if (voltage <= 0.5) pinStates[i] = 1;
+                  break;
+                case 1:  // Esperando el flanco de subida (> 2.8V)
+                  if (voltage >= 2.8) pinStates[i] = 2;
+                  break;
+                case 2:                                  // Esperando el flanco de bajada (< 0.5V)
+                  if (voltage <= 0.5) pinStates[i] = 3;  // ¡Secuencia validada uwu!
+                  break;
+              }
+            }
+          }
+
+          // 4. Preparar JSON con el dictamen de los pines
+          sendJSON.clear();
+          sendJSON["Function"] = "blink_result";
+          JsonArray results = sendJSON.createNestedArray("pins_status");
+          bool success = true;
+
+          for (int i = 0; i < NUM_GPIOS; i++) {
+            if (pinStates[i] == 3) {
+              results.add("OK");
+            } else {
+              results.add("FAIL");
+              success = false;
+            }
+          }
+
+          sendJSON["overall"] = success ? "SUCCESS" : "ERROR";
+
+          // 5. Enviar resultados de vuelta a la PULSAR
+          serializeJson(sendJSON, Serial);
+          Serial.println();
+
+          // Restaurar pines a salidas por si el programa requiere volver al estado original
+          for (int i = 0; i < NUM_GPIOS; i++) {
+            pinMode(GPIOS[i], OUTPUT);
+          }
           break;
         }
 
