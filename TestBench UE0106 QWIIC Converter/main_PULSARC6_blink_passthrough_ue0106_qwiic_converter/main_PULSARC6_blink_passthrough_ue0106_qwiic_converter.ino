@@ -44,7 +44,7 @@ void setup() {
   Serial.begin(115200);
   Master.begin(115200, SERIAL_8N1, RX2, TX2);
   delay(100);
-  serialDebug("Serial Initialized...");
+  serialDebug("Serial Pulsar C6 Initialized...");
 
 
   // ==== Iteración sobre los gpios declarados para definirlos como salidas ====
@@ -67,7 +67,7 @@ void loop() {
     if (Function == "ping") opc = 1;             // {"Function":"ping"}
     else if (Function == "ping_slave") opc = 2;  // {"Function":"ping_slave"}
     else if (Function == "blink_out") opc = 3;   // {"Function":"blink_out"}
-    else if (Function == "blink_in") opc = 4;    // {"Function":"blink_in"}
+    else if (Function == "sweep") opc = 4;       // {"Function":"sweep"}
 
     switch (opc) {
       case 1:
@@ -79,7 +79,7 @@ void loop() {
           break;
         }
 
-case 2: // ping_slave
+      case 2:  // ping_slave
         {
           serialDebug("Enviando PING hacia esclavo JUNR3...");
 
@@ -87,7 +87,7 @@ case 2: // ping_slave
           sendJSON.clear();
           sendJSON["Function"] = "ping";
           serializeJson(sendJSON, Master);
-          Master.println(); // Envía por UART a la JUNR3
+          Master.println();  // Envía por UART a la JUNR3
 
           // 2. Bloque de escucha con Timeout no bloqueante
           unsigned long startWait = millis();
@@ -98,7 +98,7 @@ case 2: // ping_slave
             if (Master.available()) {
               // Leer la línea completa que responde la JUNR3
               String slaveResponse = Master.readStringUntil('\n');
-              
+
               // Intentar parsear para asegurar que el JSON es válido (opcional, pero buena práctica)
               StaticJsonDocument<512> slaveDoc;
               DeserializationError error = deserializeJson(slaveDoc, slaveResponse);
@@ -115,7 +115,7 @@ case 2: // ping_slave
               }
 
               responseReceived = true;
-              break; // Salimos del bucle de espera inmediatamente
+              break;  // Salimos del bucle de espera inmediatamente
             }
           }
 
@@ -123,7 +123,7 @@ case 2: // ping_slave
           if (!responseReceived) {
             serialDebug("Error: Timeout excedido. JUNR3 no responde.");
           }
-          
+
           break;
         }
 
@@ -190,7 +190,29 @@ case 2: // ping_slave
 
       case 4:
         {
+          sendJSON.clear();
+          sendJSON["Function"] = "readSweep";
+          serializeJson(sendJSON, Master);
+          Master.println();
+          delay(20);
 
+          for (int i = 0; i < 10; i++) {
+            digitalWrite(A0_PIN, LOW);
+            digitalWrite(A1_PIN, LOW);
+            digitalWrite(A2_PIN, LOW);
+            digitalWrite(A3_PIN, LOW);
+            digitalWrite(A4_PIN, LOW);
+            digitalWrite(A5_PIN, LOW);
+            delay(500);
+            digitalWrite(A0_PIN, HIGH);
+            digitalWrite(A1_PIN, HIGH);
+            digitalWrite(A2_PIN, HIGH);
+            digitalWrite(A3_PIN, HIGH);
+            digitalWrite(A4_PIN, HIGH);
+            digitalWrite(A5_PIN, HIGH);
+            delay(500);
+          }
+          Serial.println("Finalizado");
           break;
         }
 

@@ -38,7 +38,7 @@ void serialDebug(String str) {
 void setup() {
 
   Serial.begin(115200);
-  serialDebug("Serial Initialized...");
+  serialDebug("Serial JUNR3 Initialized...");
 
   // ==== Iteración sobre los gpios declarados para definirlos como salidas ====
   for (int i = 0; i < NUM_GPIOS; i++) {
@@ -57,8 +57,9 @@ void loop() {
     String Function = receiveJSON["Function"];
 
     int opc = 0;
-    if (Function == "ping") opc = 1;        // {"Function":"ping"}
-    else if (Function == "blink") opc = 2;  // {"Function":"blink"}
+    if (Function == "ping") opc = 1;            // {"Function":"ping"}
+    else if (Function == "blink") opc = 2;      // {"Function":"blink"}
+    else if (Function == "readSweep") opc = 3;  // {"Function":"readSweep"}
 
     switch (opc) {
       case 1:
@@ -71,51 +72,84 @@ void loop() {
           break;
         }
 
-      case 2:  // blink (Recepción ADC)
+      case 2:  // blink (Recepción ADC con Debug)
         {
-          // 1. Configurar pines como entrada (alta impedancia para el divisor)
           for (int i = 0; i < NUM_GPIOS; i++) {
-            pinMode(GPIOS[i], INPUT);
+            pinMode(GPIOS[i], INPUT_PULLUP);
           }
 
-          // 2. Avisar a la PULSARC6 que el ADC está listo
           sendJSON.clear();
           sendJSON["status"] = "ADC_READY";
           serializeJson(sendJSON, Serial);
           Serial.println();
 
-          // 3. Máquina de estados para validar la señal analógica
           int pinStates[NUM_GPIOS] = { 0 };
+
+          // Arreglos para trackear voltajes pico y valles
+          float maxVolts[NUM_GPIOS] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+          float minVolts[NUM_GPIOS] = { 5.0, 5.0, 5.0, 5.0, 5.0, 5.0 };
+
           unsigned long start_time = millis();
           bool allFinished = false;
 
-          // Ventana de tiempo de 2.5 segundos para capturar todos los blinks
           while (millis() - start_time < 2500 && !allFinished) {
             allFinished = true;
             for (int i = 0; i < NUM_GPIOS; i++) {
-              if (pinStates[i] == 3) continue;  // Si este pin ya validó todo, lo saltamos
+              if (pinStates[i] == 3) continue;
               allFinished = false;
 
               int raw_adc = analogRead(GPIOS[i]);
-              // Conversión asumiendo un ADC de 12-bits (ej. ESP32/RP2040)
-              float voltage = (raw_adc / 4095.0) * 3.3;
 
-              // Umbrales tolerantes para compensar caídas en el divisor de tensión
+              // Conversión ajustada a 10-bits (1023.0) y 5.0V
+              float voltage = (raw_adc / 1023.0) * 5.0;
+
+              // Guardar el máximo y mínimo histórico de este pin
+              if (voltage > maxVolts[i]) maxVolts[i] = voltage;
+              if (voltage < minVolts[i]) minVolts[i] = voltage;
+
+              int oldState = pinStates[i];  // Guardamos el estado actual para comparar
+
               switch (pinStates[i]) {
-                case 0:  // Esperando asegurar que arranca en estado bajo (< 0.5V)
-                  if (voltage <= 0.5) pinStates[i] = 1;
+                case 0:
+                  if (voltage <= 0.9) pinStates[i] = 1;
                   break;
-                case 1:  // Esperando el flanco de subida (> 2.8V)
-                  if (voltage >= 2.8) pinStates[i] = 2;
+                case 1:
+                  if (voltage >= 3.2) pinStates[i] = 2;
                   break;
-                case 2:                                  // Esperando el flanco de bajada (< 0.5V)
-                  if (voltage <= 0.5) pinStates[i] = 3;  // ¡Secuencia validada uwu!
+                case 2:
+                  if (voltage <= 0.9) pinStates[i] = 3;
                   break;
+              }
+
+              // Imprimir SOLO si hubo un cambio de estado (no bloquea el loop)
+              if (pinStates[i] != oldState) {
+                Serial.print("[DEBUG] Pin GPIO ");
+                Serial.print(GPIOS[i]);
+                Serial.print(" paso de estado ");
+                Serial.print(oldState);
+                Serial.print(" a ");
+                Serial.print(pinStates[i]);
+                Serial.print(" con un voltaje de: ");
+                Serial.println(voltage);
               }
             }
           }
 
-          // 4. Preparar JSON con el dictamen de los pines
+          // === REPORTE DE DEBUG POST-MORTEM ===
+          Serial.println("\n--- REPORTE DE VOLTAJES MAX/MIN ---");
+          for (int i = 0; i < NUM_GPIOS; i++) {
+            Serial.print("GPIO ");
+            Serial.print(GPIOS[i]);
+            Serial.print(" -> Min: ");
+            Serial.print(minVolts[i]);
+            Serial.print("V | Max: ");
+            Serial.print(maxVolts[i]);
+            Serial.print("V | Estado final: ");
+            Serial.println(pinStates[i]);
+          }
+          Serial.println("-----------------------------------\n");
+
+          // JSON de respuesta normal
           sendJSON.clear();
           sendJSON["Function"] = "blink_result";
           JsonArray results = sendJSON.createNestedArray("pins_status");
@@ -131,18 +165,56 @@ void loop() {
           }
 
           sendJSON["overall"] = success ? "SUCCESS" : "ERROR";
-
-          // 5. Enviar resultados de vuelta a la PULSAR
           serializeJson(sendJSON, Serial);
           Serial.println();
 
-          // Restaurar pines a salidas por si el programa requiere volver al estado original
           for (int i = 0; i < NUM_GPIOS; i++) {
             pinMode(GPIOS[i], OUTPUT);
           }
           break;
         }
 
+      case 3:
+        {
+          sendJSON.clear();
+
+          for (int i = 0; i < NUM_GPIOS; i++) {
+            pinMode(GPIOS[i], INPUT_PULLUP);
+          }
+
+          // Damos un pequeño respiro para que la terminal no imprima basura inicial
+          delay(50);
+          Serial.println("--- INICIANDO BARRIDO RAW ADC Y VOLTAJE (ATmega 10-bit / 5V) ---");
+
+          for (int i = 0; i < 50; i++) {
+            // Iteramos sobre los pines para que el código quede impecable y escalable
+            for (int j = 0; j < NUM_GPIOS; j++) {
+              int raw_adc = analogRead(GPIOS[j]);
+
+              // Conversión con la fórmula correcta para el ATmega328P
+              float voltage = (raw_adc / 1023.0) * 5.0;
+
+              Serial.print("A");
+              Serial.print(j);
+              Serial.print(": ");
+              Serial.print(raw_adc);
+              Serial.print(" (");
+              Serial.print(voltage, 2);  // El '2' le dice que imprima solo dos decimales (ej. 3.60V)
+              Serial.print("V)");
+
+              // Si no es el último pin, imprimimos el separador. Si es el último, damos el salto de línea.
+              if (j < NUM_GPIOS - 1) {
+                Serial.print(" | ");
+              } else {
+                Serial.println();
+              }
+            }
+            delay(100);
+          }
+
+          Serial.println("--- BARRIDO FINALIZADO ---");
+          break;
+        }
 
       default:
         serialDebug("error option not allowed");
