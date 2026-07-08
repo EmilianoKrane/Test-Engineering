@@ -21,7 +21,7 @@ Este firmware se encarga de utilizar los gpios analogicos como salidas digitales
 String JSON_entrada;                   ///< Buffer para recibir JSON desde PagWeb
 StaticJsonDocument<1024> receiveJSON;  ///< Documento JSON para parsear datos recibidos
 String JSON_salida;                    ///< Buffer para transmitir JSON de respuesta
-StaticJsonDocument<1024> sendJSON;     ///< Documento JSON para armar respuestass
+StaticJsonDocument<1024> sendJSON;     ///< Documento JSON para armar respuestas
 
 // ==== CREACIÓN DE VARIABLES GLOBALES ====
 const int GPIOS[] = { A0_PIN, A1_PIN, A2_PIN, A3_PIN, A4_PIN, A5_PIN };
@@ -74,6 +74,8 @@ void loop() {
 
       case 2:  // blink (Recepción ADC con Debug)
         {
+          bool debug = false;
+
           for (int i = 0; i < NUM_GPIOS; i++) {
             pinMode(GPIOS[i], INPUT_PULLUP);
           }
@@ -121,33 +123,37 @@ void loop() {
                   break;
               }
 
-              // Imprimir SOLO si hubo un cambio de estado (no bloquea el loop)
-              if (pinStates[i] != oldState) {
-                Serial.print("[DEBUG] Pin GPIO ");
-                Serial.print(GPIOS[i]);
-                Serial.print(" paso de estado ");
-                Serial.print(oldState);
-                Serial.print(" a ");
-                Serial.print(pinStates[i]);
-                Serial.print(" con un voltaje de: ");
-                Serial.println(voltage);
+              if (debug) {
+                // Imprimir SOLO si hubo un cambio de estado (no bloquea el loop)
+                if (pinStates[i] != oldState) {
+                  Serial.print("[DEBUG] Pin GPIO ");
+                  Serial.print(GPIOS[i]);
+                  Serial.print(" paso de estado ");
+                  Serial.print(oldState);
+                  Serial.print(" a ");
+                  Serial.print(pinStates[i]);
+                  Serial.print(" con un voltaje de: ");
+                  Serial.println(voltage);
+                }
               }
             }
           }
 
-          // === REPORTE DE DEBUG POST-MORTEM ===
-          Serial.println("\n--- REPORTE DE VOLTAJES MAX/MIN ---");
-          for (int i = 0; i < NUM_GPIOS; i++) {
-            Serial.print("GPIO ");
-            Serial.print(GPIOS[i]);
-            Serial.print(" -> Min: ");
-            Serial.print(minVolts[i]);
-            Serial.print("V | Max: ");
-            Serial.print(maxVolts[i]);
-            Serial.print("V | Estado final: ");
-            Serial.println(pinStates[i]);
+          if (debug) {
+            // === REPORTE DE DEBUG POST-MORTEM ===
+            Serial.println("\n--- REPORTE DE VOLTAJES MAX/MIN ---");
+            for (int i = 0; i < NUM_GPIOS; i++) {
+              Serial.print("GPIO ");
+              Serial.print(GPIOS[i]);
+              Serial.print(" -> Min: ");
+              Serial.print(minVolts[i]);
+              Serial.print("V | Max: ");
+              Serial.print(maxVolts[i]);
+              Serial.print("V | Estado final: ");
+              Serial.println(pinStates[i]);
+            }
+            Serial.println("-----------------------------------\n");
           }
-          Serial.println("-----------------------------------\n");
 
           // JSON de respuesta normal
           sendJSON.clear();
