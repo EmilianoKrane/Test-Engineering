@@ -11,14 +11,14 @@ Este firmware se encarga de utilizar los gpios analogicos como salidas digitales
 #include <HardwareSerial.h>
 
 // ==== DECLARACIÓN DE PINES ====
-#define A0_PIN 0   // >> Analógico A0 - Salida digital y lectura con ADC
-#define A1_PIN 1   // >> Analógico A1 - Salida digital y lectura con ADC
-#define A2_PIN 3   // >> Analógico A2 - Salida digital y lectura con ADC
-#define A3_PIN 4   // >> Analógico A3 - Salida digital y lectura con ADC
-#define A4_PIN 22  // >> Analógico A4 - Salida digital y lectura con ADC
-#define A5_PIN 23  // >> Analógico A5 - Salida digital y lectura con ADC
-#define RX2 15     // >> GPIO15 como RX de UART2 - Recepción de datos desde interfaz web
-#define TX2 19     // >> GPIO19 como TX de UART2 - Transmisión de datos a interfaz web
+#define A0_PIN 0  // >> Analógico A0 - Salida digital y lectura con ADC
+#define A1_PIN 1  // >> Analógico A1 - Salida digital y lectura con ADC
+#define A2_PIN 2  // >> Analógico A2 - Salida digital y lectura con ADC
+#define A3_PIN 3  // >> Analógico A3 - Salida digital y lectura con ADC
+#define A4_PIN 4  // >> Analógico A4 - Salida digital y lectura con ADC
+#define A5_PIN 5  // >> Analógico A5 - Salida digital y lectura con ADC
+#define RX2 15    // >> GPIO15 como RX de UART2 - Recepción de datos desde interfaz web
+#define TX2 19    // >> GPIO19 como TX de UART2 - Transmisión de datos a interfaz web
 
 // ==== CREACIÓN DE OBJETOS ====
 HardwareSerial Master(1);              // Crear objeto para UART2 en PULSAR como Bridge
@@ -68,6 +68,7 @@ void loop() {
     else if (Function == "ping_slave") opc = 2;  // {"Function":"ping_slave"}
     else if (Function == "blink_out") opc = 3;   // {"Function":"blink_out"}
     else if (Function == "sweep") opc = 4;       // {"Function":"sweep"}
+    else if (Function == "blink_in") opc = 5;    // {"Function":"blink_in"}
 
     switch (opc) {
       case 1:
@@ -216,6 +217,127 @@ void loop() {
           break;
         }
 
+      case 5:  // blink_in (PULSAR lee la señal de la JUNR3)
+        {
+          serialDebug("Iniciando lectura Blink_in desde JUNR3...");
+
+          // 1. Configurar pines de la PULSAR como entrada ADC
+          for (int i = 0; i < NUM_GPIOS; i++) {
+            pinMode(GPIOS[i], INPUT_PULLDOWN);
+          }
+
+          // 2. Avisar a la JUNR3 que empiece a mandar los pulsos
+          sendJSON.clear();
+          sendJSON["Function"] = "blink_in";
+          serializeJson(sendJSON, Master);
+          Master.println();
+
+          // 3. Esperar confirmación sincrónica (BLINK_START)
+          long waitStart = millis();
+          bool isReady = false;
+          while (millis() - waitStart < 2000) {  // Timeout de 2 segundos
+            if (Master.available()) {
+              String rx = Master.readStringUntil('\n');
+              StaticJsonDocument<256> rxDoc;
+              deserializeJson(rxDoc, rx);
+              if (rxDoc["status"] == "BLINK_START") {
+                isReady = true;
+                break;
+              }
+            }
+          }
+
+          if (!isReady) {
+            serialDebug("Error: JUNR3 timeout o no respondió al handshake de blink_in");
+            break;  // Abortar si el esclavo no responde
+          }
+
+          // 4. Máquina de estados para validar la señal analógica (ADC ESP32-C6)
+          int pinStates[NUM_GPIOS] = { 0 };
+
+          // ESP32-C6 a 3.3V
+          float maxVolts[NUM_GPIOS] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+          float minVolts[NUM_GPIOS] = { 3.3, 3.3, 3.3, 3.3, 3.3, 3.3 };
+
+          unsigned long start_time = millis();
+          bool allFinished = false;
+
+          while (millis() - start_time < 2500 && !allFinished) {
+            allFinished = true;
+            for (int i = 0; i < NUM_GPIOS; i++) {
+              if (pinStates[i] == 3) continue;
+              allFinished = false;
+
+              int raw_adc = analogRead(GPIOS[i]);
+
+              // Fórmula para el ESP32-C6 (12-bits, 3.3V)
+              float voltage = (raw_adc / 4095.0) * 3.3;
+
+              if (voltage > maxVolts[i]) maxVolts[i] = voltage;
+              if (voltage < minVolts[i]) minVolts[i] = voltage;
+
+              int oldState = pinStates[i];
+
+              // Umbrales calculados asumiendo que el divisor bajará los 5V a ~3.3V
+              switch (pinStates[i]) {
+                case 0:
+                  if (voltage <= 0.8) pinStates[i] = 1;
+                  break;
+                case 1:
+                  if (voltage >= 2.5) pinStates[i] = 2;  // Espera al menos 2.5V del divisor
+                  break;
+                case 2:
+                  if (voltage <= 0.8) pinStates[i] = 3;
+                  break;
+              }
+
+              if (pinStates[i] != oldState) {
+                Serial.print("[DEBUG] ESP ADC GPIO ");
+                Serial.print(GPIOS[i]);
+                Serial.print(" paso de ");
+                Serial.print(oldState);
+                Serial.print(" a ");
+                Serial.print(pinStates[i]);
+                Serial.print(" con: ");
+                Serial.print(voltage);
+                Serial.println("V");
+              }
+            }
+          }
+
+          // 5. Reporte de Debug en Serial de la PULSAR
+          Serial.println("\n--- REPORTE DE VOLTAJES MAX/MIN (ESP32-C6) ---");
+          for (int i = 0; i < NUM_GPIOS; i++) {
+            Serial.print("GPIO ");
+            Serial.print(GPIOS[i]);
+            Serial.print(" -> Min: ");
+            Serial.print(minVolts[i]);
+            Serial.print("V | Max: ");
+            Serial.print(maxVolts[i]);
+            Serial.print("V | Estado: ");
+            Serial.println(pinStates[i]);
+          }
+
+          // 6. Imprimir el JSON resultante para la Interfaz Web
+          sendJSON.clear();
+          sendJSON["Function"] = "blink_in_result";
+          JsonArray results = sendJSON.createNestedArray("pins_status");
+          bool success = true;
+
+          for (int i = 0; i < NUM_GPIOS; i++) {
+            if (pinStates[i] == 3) {
+              results.add("OK");
+            } else {
+              results.add("FAIL");
+              success = false;
+            }
+          }
+
+          sendJSON["overall"] = success ? "SUCCESS" : "ERROR";
+          serializeJson(sendJSON, Serial);  // Se manda a la PC/Web
+          Serial.println();
+          break;
+        }
 
       default:
         serialDebug("error option not allowed");

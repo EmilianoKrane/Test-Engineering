@@ -60,6 +60,7 @@ void loop() {
     if (Function == "ping") opc = 1;            // {"Function":"ping"}
     else if (Function == "blink") opc = 2;      // {"Function":"blink"}
     else if (Function == "readSweep") opc = 3;  // {"Function":"readSweep"}
+    else if (Function == "blink_in") opc = 4;   // {"Function":"blink_in"}
 
     switch (opc) {
       case 1:
@@ -219,6 +220,33 @@ void loop() {
           }
 
           Serial.println("--- BARRIDO FINALIZADO ---");
+          break;
+        }
+
+      case 4:  // blink_in (JUNR3 genera los pulsos hacia la PULSAR)
+        {
+          // 1. Configurar los pines analógicos del ATmega como salidas digitales
+          for (int i = 0; i < NUM_GPIOS; i++) {
+            pinMode(GPIOS[i], OUTPUT);
+            digitalWrite(GPIOS[i], LOW);  // Forzar el estado bajo inicial
+          }
+
+          // 2. Avisar a la PULSARC6 que el hardware está listo para empezar
+          sendJSON.clear();
+          sendJSON["status"] = "BLINK_START";
+          serializeJson(sendJSON, Serial);
+          Serial.println();
+
+          // Le damos 50ms a la PULSAR para que entre cómodamente a su ciclo while() de lectura
+          delay(50);
+
+          // 3. Ejecutar la secuencia de pulsos (0V -> 5V -> 0V)
+          for (int i = 0; i < NUM_GPIOS; i++) digitalWrite(GPIOS[i], HIGH);
+          delay(500);  // Mantenemos el pulso alto por medio segundo
+
+          for (int i = 0; i < NUM_GPIOS; i++) digitalWrite(GPIOS[i], LOW);
+
+          // La JUNR3 no necesita mandar reporte de validación, de eso ya se encargó la PULSAR.
           break;
         }
 
