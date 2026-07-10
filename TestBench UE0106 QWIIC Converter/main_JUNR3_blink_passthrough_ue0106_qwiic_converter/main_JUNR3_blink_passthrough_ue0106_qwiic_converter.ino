@@ -1,8 +1,23 @@
 /*
->> Firmware JUNR3 Blink 5V -> recibe PULSARC6 a través de un divisor de tensión para regular a 3.3V
-Este firmware se encarga de utilizar los gpios analogicos como salidas digitales de 1 y 0, y a su vez, realiza una
- lectura de entrada analogica. 
- La JUNR3 se usa como esclavo y recibe instrucciones por medio de uart a través de los gpios 0 y 1
+Firmware de prueba para la JUNR3 en modo esclavo.
+
+Qué hace:
+- Usa los pines analógicos como salidas digitales de alto/bajo.
+- También puede leer señales analógicas mediante ADC para validar pulsos.
+- Recibe órdenes por Serial en formato JSON desde la PULSARC6 o una interfaz externa.
+
+Operaciones soportadas:
+- ping: verifica comunicación básica.
+- blink: prepara la JUNR3 para detectar pulsos y reporta resultados ADC.
+- readSweep: ejecuta un barrido simple de lectura de voltaje por pin.
+- blink_in: genera un pulso desde la JUNR3 hacia la PULSARC6.
+
+Estructura del archivo:
+1. Configuración de pines y bibliotecas.
+2. Buffers y objetos JSON.
+3. Variables globales y utilidades de depuración.
+4. setup() para inicialización.
+5. loop() con despacho por tipo de operación.
 */
 
 // ==== BIBLIOTECAS ====
@@ -17,13 +32,13 @@ Este firmware se encarga de utilizar los gpios analogicos como salidas digitales
 #define A4_PIN 18  // >> Analógico A4 - Salida digital y lectura con ADC
 #define A5_PIN 19  // >> Analógico A5 - Salida digital y lectura con ADC
 
-// ==== CREACIÓN DE OBJETOS ====
-String JSON_entrada;                   ///< Buffer para recibir JSON desde PagWeb
+// ==== OBJETOS Y BUFFERS JSON ====
+String JSON_entrada;                   ///< Buffer para recibir JSON desde la interfaz o la PULSARC6
 StaticJsonDocument<1024> receiveJSON;  ///< Documento JSON para parsear datos recibidos
 String JSON_salida;                    ///< Buffer para transmitir JSON de respuesta
 StaticJsonDocument<1024> sendJSON;     ///< Documento JSON para armar respuestas
 
-// ==== CREACIÓN DE VARIABLES GLOBALES ====
+// ==== VARIABLES GLOBALES ====
 const int GPIOS[] = { A0_PIN, A1_PIN, A2_PIN, A3_PIN, A4_PIN, A5_PIN };
 const int NUM_GPIOS = sizeof(GPIOS) / sizeof(GPIOS[0]);
 
@@ -36,24 +51,24 @@ void serialDebug(String str) {
 }
 
 void setup() {
-
+  // ==== CONFIGURACIÓN INICIAL ====
   Serial.begin(115200);
   serialDebug("Serial JUNR3 Initialized...");
 
-  // ==== Iteración sobre los gpios declarados para definirlos como salidas ====
+  // ==== CONFIGURACIÓN DE PINES COMO SALIDAS POR DEFECTO ====
   for (int i = 0; i < NUM_GPIOS; i++) {
     pinMode(GPIOS[i], OUTPUT);
   }
 }
 
 void loop() {
-
+  // ==== BUCLE PRINCIPAL / DESPACHADOR DE COMANDOS ====
   if (Serial.available()) {
 
     JSON_entrada = Serial.readStringUntil('\n');
     DeserializationError error = deserializeJson(receiveJSON, JSON_entrada);
 
-    // ==== Creación de claves de entrada admitidas por JSON ====
+    // ==== DECODIFICACIÓN DE LA OPERACIÓN SOLICITADA ====
     String Function = receiveJSON["Function"];
 
     int opc = 0;
@@ -62,6 +77,7 @@ void loop() {
     else if (Function == "readSweep") opc = 3;  // {"Function":"readSweep"}
     else if (Function == "blink_in") opc = 4;   // {"Function":"blink_in"}
 
+    // ==== DESPACHO POR TIPO DE OPERACIÓN ====
     switch (opc) {
       case 1:
         {

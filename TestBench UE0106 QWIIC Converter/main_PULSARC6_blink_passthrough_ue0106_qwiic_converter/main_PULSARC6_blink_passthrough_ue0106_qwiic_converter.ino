@@ -1,8 +1,24 @@
 /*
->> Firmware JUNR3 Blink 5V -> recibe PULSARC6 a través de un divisor de tensión para regular a 3.3V
-Este firmware se encarga de utilizar los gpios analogicos como salidas digitales de 1 y 0, y a su vez, realiza una
- lectura de entrada analogica. 
- La JUNR3 se usa como esclavo y recibe instrucciones por medio de uart 
+Firmware de prueba para la PULSARC6 actuando como maestro del enlace.
+
+Qué hace:
+- Controla los pines analógicos como salidas digitales para generar pulsos.
+- Comunica con la JUNR3 por UART2 usando JSON.
+- Puede ejecutar pruebas de ping, blink_out, sweep y blink_in.
+
+Operaciones soportadas:
+- ping: verifica comunicación básica con la interfaz.
+- ping_slave: consulta al esclavo JUNR3.
+- blink_out: envía una orden de blink a la JUNR3 y espera validación.
+- sweep: activa un barrido simple de los pines.
+- blink_in: coordina la lectura de la señal enviada por la JUNR3.
+
+Estructura del archivo:
+1. Configuración de pines, UART y bibliotecas.
+2. Buffers y objetos JSON.
+3. Variables globales y utilidades de depuración.
+4. setup() para inicialización.
+5. loop() con despacho por tipo de operación.
 */
 
 // ==== BIBLIOTECAS ====
@@ -20,14 +36,14 @@ Este firmware se encarga de utilizar los gpios analogicos como salidas digitales
 #define RX2 15    // >> GPIO15 como RX de UART2 - Recepción de datos desde interfaz web
 #define TX2 19    // >> GPIO19 como TX de UART2 - Transmisión de datos a interfaz web
 
-// ==== CREACIÓN DE OBJETOS ====
-HardwareSerial Master(1);              // Crear objeto para UART2 en PULSAR como Bridge
-String JSON_entrada;                   ///< Buffer para recibir JSON desde PagWeb
+// ==== OBJETOS Y BUFFERS JSON ====
+HardwareSerial Master(1);              // Crear objeto para UART2 en PULSAR como bridge
+String JSON_entrada;                   ///< Buffer para recibir JSON desde la interfaz o la PC
 StaticJsonDocument<1024> receiveJSON;  ///< Documento JSON para parsear datos recibidos
 String JSON_salida;                    ///< Buffer para transmitir JSON de respuesta
 StaticJsonDocument<1024> sendJSON;     ///< Documento JSON para armar respuesta
 
-// ==== CREACIÓN DE VARIABLES GLOBALES ====
+// ==== VARIABLES GLOBALES ====
 const int GPIOS[] = { A0_PIN, A1_PIN, A2_PIN, A3_PIN, A4_PIN, A5_PIN };
 const int NUM_GPIOS = sizeof(GPIOS) / sizeof(GPIOS[0]);
 
@@ -40,27 +56,26 @@ void serialDebug(String str) {
 }
 
 void setup() {
-
+  // ==== CONFIGURACIÓN INICIAL ====
   Serial.begin(115200);
   Master.begin(115200, SERIAL_8N1, RX2, TX2);
   delay(100);
   serialDebug("Serial Pulsar C6 Initialized...");
 
-
-  // ==== Iteración sobre los gpios declarados para definirlos como salidas ====
+  // ==== CONFIGURACIÓN DE PINES COMO SALIDAS POR DEFECTO ====
   for (int i = 0; i < NUM_GPIOS; i++) {
     pinMode(GPIOS[i], OUTPUT);
   }
 }
 
 void loop() {
-
+  // ==== BUCLE PRINCIPAL / DESPACHADOR DE COMANDOS ====
   if (Serial.available()) {
 
     JSON_entrada = Serial.readStringUntil('\n');
     DeserializationError error = deserializeJson(receiveJSON, JSON_entrada);
 
-    // ==== Creación de claves de entrada admitidas por JSON ====
+    // ==== DECODIFICACIÓN DE LA OPERACIÓN SOLICITADA ====
     String Function = receiveJSON["Function"];
 
     int opc = 0;
@@ -70,6 +85,7 @@ void loop() {
     else if (Function == "sweep") opc = 4;       // {"Function":"sweep"}
     else if (Function == "blink_in") opc = 5;    // {"Function":"blink_in"}
 
+    // ==== DESPACHO POR TIPO DE OPERACIÓN ====
     switch (opc) {
       case 1:
         {
