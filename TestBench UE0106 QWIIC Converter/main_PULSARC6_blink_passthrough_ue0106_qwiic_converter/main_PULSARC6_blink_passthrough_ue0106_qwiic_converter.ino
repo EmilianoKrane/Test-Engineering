@@ -570,6 +570,47 @@ definidos para el testeo, dando una salida digital de 0V a 3V3, posterior a un h
 
       case 10:
         {
+          sendJSON.clear();
+          for (int i = 0; i < NUM_GPIOS; i++) {
+            pinMode(GPIOS[i], INPUT_PULLDOWN);
+          }
+          delay(20);
+
+          sendJSON["Function"] = "blink_out";
+          serializeJson(sendJSON, Master);
+          Master.println();
+
+          // Damos un pequeño respiro para que la terminal no imprima basura inicial
+          delay(50);
+          Serial.println("--- INICIANDO BARRIDO RAW ADC Y VOLTAJE (ATmega 10-bit / 5V -> 3V3) ---");
+
+          for (int i = 0; i < 100; i++) {
+            // Iteramos sobre los pines para que el código quede impecable y escalable
+            for (int j = 0; j < NUM_GPIOS; j++) {
+              int raw_adc = analogRead(GPIOS[j]);
+
+              // Conversión con la fórmula correcta para el 
+              float voltage = (raw_adc / 4095.0) * 3.3;
+
+              Serial.print("A");
+              Serial.print(j);
+              Serial.print(": ");
+              Serial.print(raw_adc);
+              Serial.print(" (");
+              Serial.print(voltage, 2);  // El '2' le dice que imprima solo dos decimales (ej. 3.60V)
+              Serial.print("V)");
+
+              // Si no es el último pin, imprimimos el separador. Si es el último, damos el salto de línea.
+              if (j < NUM_GPIOS - 1) {
+                Serial.print(" | ");
+              } else {
+                Serial.println();
+              }
+            }
+            delay(100);
+          }
+
+          Serial.println("--- BARRIDO FINALIZADO ---");
           break;
         }
 

@@ -76,6 +76,7 @@ void loop() {
     else if (Function == "blink") opc = 2;      // {"Function":"blink"}
     else if (Function == "readSweep") opc = 3;  // {"Function":"readSweep"}
     else if (Function == "blink_in") opc = 4;   // {"Function":"blink_in"}
+    else if (Function == "blink_out") opc = 5;  // {"Function":"blink_out"}
 
     // ==== DESPACHO POR TIPO DE OPERACIÓN ====
     switch (opc) {
@@ -273,6 +274,36 @@ void loop() {
           for (int i = 0; i < NUM_GPIOS; i++) digitalWrite(GPIOS[i], LOW);
 
           // La JUNR3 no necesita mandar reporte de validación, de eso ya se encargó la PULSAR.
+          break;
+        }
+
+      case 5:
+        {
+
+          Serial.println("Inicio del barrido...");
+
+          for (int i = 0; i < NUM_GPIOS; i++) {
+            pinMode(GPIOS[i], OUTPUT);
+          }
+          delay(50);
+
+          for (int i = 0; i < 10; i++) {
+            digitalWrite(A0_PIN, LOW);
+            digitalWrite(A1_PIN, LOW);
+            digitalWrite(A2_PIN, LOW);
+            digitalWrite(A3_PIN, LOW);
+            digitalWrite(A4_PIN, LOW);
+            digitalWrite(A5_PIN, LOW);
+            delay(1000);
+            digitalWrite(A0_PIN, HIGH);
+            digitalWrite(A1_PIN, HIGH);
+            digitalWrite(A2_PIN, HIGH);
+            digitalWrite(A3_PIN, HIGH);
+            digitalWrite(A4_PIN, HIGH);
+            digitalWrite(A5_PIN, HIGH);
+            delay(1000);
+          }
+          Serial.println("Finalizado");
           break;
         }
 
