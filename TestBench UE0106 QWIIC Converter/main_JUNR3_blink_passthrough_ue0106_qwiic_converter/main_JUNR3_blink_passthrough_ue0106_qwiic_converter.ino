@@ -79,6 +79,12 @@ void loop() {
 
     // ==== DESPACHO POR TIPO DE OPERACIÓN ====
     switch (opc) {
+
+      /*
+      Este case solo responde a la PulsarC6 Master el ping recibido por UART
+      Se acciona remoto, recibiendo el ping desde la pulsar para confirmar que existe
+      comunicación entre ambos dispositivos. Es el case 2 de la pulsar quien envia este ping
+      */
       case 1:
         {
           sendJSON.clear();
@@ -89,8 +95,12 @@ void loop() {
           break;
         }
 
+        /*
+
+*/
       case 2:  // blink (Recepción ADC con Debug)
         {
+          sendJSON.clear();
           bool debug = false;
 
           for (int i = 0; i < NUM_GPIOS; i++) {
@@ -157,7 +167,7 @@ void loop() {
           }
 
           if (debug) {
-            // === REPORTE DE DEBUG POST-MORTEM ===
+            // === REPORTE DE DEBUG ===
             Serial.println("\n--- REPORTE DE VOLTAJES MAX/MIN ---");
             for (int i = 0; i < NUM_GPIOS; i++) {
               Serial.print("GPIO ");
@@ -209,7 +219,7 @@ void loop() {
           delay(50);
           Serial.println("--- INICIANDO BARRIDO RAW ADC Y VOLTAJE (ATmega 10-bit / 5V) ---");
 
-          for (int i = 0; i < 50; i++) {
+          for (int i = 0; i < 100; i++) {
             // Iteramos sobre los pines para que el código quede impecable y escalable
             for (int j = 0; j < NUM_GPIOS; j++) {
               int raw_adc = analogRead(GPIOS[j]);

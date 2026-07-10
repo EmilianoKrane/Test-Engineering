@@ -137,17 +137,25 @@ void loop() {
     // Funciones de activacion de gpios y lectura de tramas
     else if (Function == "ping_slave") opc = 2;  // {"Function":"ping_slave"}
     else if (Function == "blink_out") opc = 3;   // {"Function":"blink_out"}
-    else if (Function == "sweep") opc = 4;       // {"Function":"sweep"}
     else if (Function == "blink_in") opc = 5;    // {"Function":"blink_in"}
+    else if (Function == "sweep") opc = 4;       // {"Function":"sweep"}
+    else if (Function == "sweep_in") opc = 10;   // {"Function":"sweep_in"}
 
     // Funciones de Accionamiento de relevadores
     else if (Function == "scanAddr") opc = 6;   // {"Function": "scanAddr"}
     else if (Function == "channelON") opc = 7;  // {"Function": "channelON", "channel":1}
     else if (Function == "sleep") opc = 8;      // {"Function": "sleep"}
 
+    else if (Function == "testAll") opc = 9;  // {"Function": "testAll"}
+
 
     // ==== DESPACHO POR TIPO DE OPERACIÓN ====
     switch (opc) {
+
+      /*
+      case 1. es un ping a la pulsar desde el monitor serie para validar que es capaz de 
+      responder y de cumplir con el resto de comando de funcionamiento por JSON
+      */
       case 1:
         {
           sendJSON.clear();
@@ -157,6 +165,10 @@ void loop() {
           break;
         }
 
+      /*
+      Envia un ping por el UART2 Master conectado a la JUNR3 para validar que existe comunicacion
+      entre ambas tarjetas de desarrollo para llevar a cabo el testeo
+      */
       case 2:  // ping_slave
         {
           serialDebug("Enviando PING hacia esclavo JUNR3...");
@@ -205,6 +217,13 @@ void loop() {
           break;
         }
 
+
+        /*
+Este case es un blink de salida, la pulsar realiza un encendido y apagado de los gpios
+definidos para el testeo, dando una salida digital de 0V a 3V3, posterior a un handshake con 
+
+
+*/
       case 3:  // blink_out
         {
           serialDebug("Iniciando secuencia Blink_out hacia JUNR3...");
@@ -274,7 +293,7 @@ void loop() {
           Master.println();
           delay(20);
 
-          for (int i = 0; i < 10; i++) {
+          for (int i = 0; i < 20; i++) {
             digitalWrite(A0_PIN, LOW);
             digitalWrite(A1_PIN, LOW);
             digitalWrite(A2_PIN, LOW);
@@ -358,13 +377,13 @@ void loop() {
               // Umbrales calculados asumiendo que el divisor bajará los 5V a ~3.3V
               switch (pinStates[i]) {
                 case 0:
-                  if (voltage <= 0.8) pinStates[i] = 1;
+                  if (voltage <= 0.3) pinStates[i] = 1;
                   break;
                 case 1:
-                  if (voltage >= 2.5) pinStates[i] = 2;  // Espera al menos 2.5V del divisor
+                  if (voltage >= 1.1) pinStates[i] = 2;  // Espera al menos 1.2V del divisor
                   break;
                 case 2:
-                  if (voltage <= 0.8) pinStates[i] = 3;
+                  if (voltage <= 0.3) pinStates[i] = 3;
                   break;
               }
 
@@ -434,8 +453,6 @@ void loop() {
         }
 
 
-
-
       case 7:  // Activación de canal
         {
           if (channel >= 1 && channel <= 16) {
@@ -475,6 +492,88 @@ void loop() {
           delay(100);
           break;
         }
+
+
+      case 9:
+        {
+          sendJSON.clear();
+
+          // ==== SECUENCIA DE TESTEO PASSTHOUGH ====
+          /*Implica tener Módulos con alimentación independiente*/
+          serialDebug("Iniciando secuencia Blink_out hacia JUNR3...");
+
+          // 1. Avisar a la JUNR3 que se configure como ADC
+          sendJSON.clear();
+          sendJSON["Function"] = "blink";
+          serializeJson(sendJSON, Master);
+          Master.println();
+          delay(20);
+
+          // 2. Esperar confirmación sincrónica (ADC_READY)
+          long waitStart = millis();
+          bool isReady = false;
+          while (millis() - waitStart < 2000) {  // Timeout de 2 segundos
+            if (Master.available()) {
+              String rx = Master.readStringUntil('\n');
+              StaticJsonDocument<256> rxDoc;
+              deserializeJson(rxDoc, rx);
+              if (rxDoc["status"] == "ADC_READY") {
+                isReady = true;
+                break;
+              }
+            }
+          }
+
+          if (!isReady) {
+            serialDebug("Error: JUNR3 timeout o no respondió al handshake");
+            //break;  // Abortar si no hay respuesta
+          }
+
+          // 3. Ejecutar los pulsos (0V -> 3.3V -> 0V)
+          // Nos aseguramos que inicie en LOW
+          for (int i = 0; i < NUM_GPIOS; i++) digitalWrite(GPIOS[i], LOW);
+          delay(100);
+
+          // Flanco de subida
+          for (int i = 0; i < NUM_GPIOS; i++) digitalWrite(GPIOS[i], HIGH);
+          delay(500);  // Tiempo en estado alto
+
+          // Flanco de bajada
+          for (int i = 0; i < NUM_GPIOS; i++) digitalWrite(GPIOS[i], LOW);
+
+          // 4. Esperar el reporte de validación final de la JUNR3
+          waitStart = millis();
+          bool validationReceived = false;
+          while (millis() - waitStart < 3000) {  // Timeout de 3 segundos para los resultados
+            if (Master.available()) {
+              String rx = Master.readStringUntil('\n');
+              // Reenviar el JSON exacto a la interfaz web
+              Serial.println(rx);
+              validationReceived = true;
+              break;
+            }
+          }
+
+          if (!validationReceived) {
+            serialDebug("Error: JUNR3 no envió resultados de validación");
+          }
+
+          // ==== SECUENCIA DE TESTEO BOOST 3V3 -> 5V ====
+
+
+          // ==== SECUENCIA DE TESTEO BUCK 5V -> 3V3 ====
+
+
+
+          break;
+        }
+
+      case 10:
+        {
+          break;
+        }
+
+
 
       default:
         serialDebug("error option not allowed");
