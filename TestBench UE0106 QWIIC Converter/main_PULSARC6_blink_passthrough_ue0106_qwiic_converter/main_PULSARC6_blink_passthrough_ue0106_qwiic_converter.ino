@@ -25,16 +25,19 @@ Estructura del archivo:
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <HardwareSerial.h>
+#include <Wire.h>
 
 // ==== DECLARACIÓN DE PINES ====
-#define A0_PIN 0  // >> Analógico A0 - Salida digital y lectura con ADC
-#define A1_PIN 1  // >> Analógico A1 - Salida digital y lectura con ADC
-#define A2_PIN 2  // >> Analógico A2 - Salida digital y lectura con ADC
-#define A3_PIN 3  // >> Analógico A3 - Salida digital y lectura con ADC
-#define A4_PIN 4  // >> Analógico A4 - Salida digital y lectura con ADC
-#define A5_PIN 5  // >> Analógico A5 - Salida digital y lectura con ADC
-#define RX2 15    // >> GPIO15 como RX de UART2 - Recepción de datos desde interfaz web
-#define TX2 19    // >> GPIO19 como TX de UART2 - Transmisión de datos a interfaz web
+#define A0_PIN 0   // >> Analógico A0 - Salida digital y lectura con ADC
+#define A1_PIN 1   // >> Analógico A1 - Salida digital y lectura con ADC
+#define A2_PIN 2   // >> Analógico A2 - Salida digital y lectura con ADC
+#define A3_PIN 3   // >> Analógico A3 - Salida digital y lectura con ADC
+#define A4_PIN 4   // >> Analógico A4 - Salida digital y lectura con ADC
+#define A5_PIN 5   // >> Analógico A5 - Salida digital y lectura con ADC
+#define SDA_PIN 6  // >> SDA para I2C con el esclavo - Línea de datos I2C
+#define SCL_PIN 7  // >> SCL para I2C con el esclavo - Línea de reloj I2C
+#define RX2 15     // >> GPIO15 como RX de UART2 - Recepción de datos desde interfaz web
+#define TX2 19     // >> GPIO19 como TX de UART2 - Transmisión de datos a interfaz web
 
 // ==== OBJETOS Y BUFFERS JSON ====
 HardwareSerial Master(1);              // Crear objeto para UART2 en PULSAR como bridge
@@ -44,6 +47,7 @@ String JSON_salida;                    ///< Buffer para transmitir JSON de respu
 StaticJsonDocument<1024> sendJSON;     ///< Documento JSON para armar respuesta
 
 // ==== VARIABLES GLOBALES ====
+const uint8_t SLAVE_ADDR = 0x40;  // Dirección I2C de tarjeta de relevadores
 const int GPIOS[] = { A0_PIN, A1_PIN, A2_PIN, A3_PIN, A4_PIN, A5_PIN };
 const int NUM_GPIOS = sizeof(GPIOS) / sizeof(GPIOS[0]);
 
@@ -55,12 +59,54 @@ void serialDebug(String str) {
   Serial.println();
 }
 
+
+// --- Función para enviar comando I2C al esclavo ---
+/**
+ * @brief Envía un comando I2C al dispositivo esclavo.
+ * @param command Comando a enviar (byte).
+ */
+void sendCommandI2C(uint8_t command) {
+  Wire.beginTransmission(SLAVE_ADDR);
+  Wire.write(command);
+  uint8_t error = Wire.endTransmission();
+
+  if (error == 0) {
+    serialDebug("Comando enviado OK: 0x" + String(command, HEX));
+  } else {
+    serialDebug("Error I2C " + String(error) + " enviando: 0x" + String(command, HEX));
+  }
+}
+
+// --- Función para leer respuesta del esclavo ---
+/**
+ * @brief Lee una respuesta del dispositivo esclavo vía I2C
+ * @return Respuesta del esclavo (byte) o 0xFF en caso de error
+ */
+uint8_t readResponseI2C() {
+  Wire.requestFrom(SLAVE_ADDR, (uint8_t)1);  // Solicitar 1 byte
+
+  if (Wire.available()) {
+    uint8_t response = Wire.read();
+    serialDebug("Respuesta recibida: 0x" + String(response, HEX));
+    return response;
+  } else {
+    serialDebug("No hubo respuesta del esclavo");
+    return 0xFF;  // Valor de error arbitrario
+  }
+}
+
+
 void setup() {
   // ==== CONFIGURACIÓN INICIAL ====
   Serial.begin(115200);
   Master.begin(115200, SERIAL_8N1, RX2, TX2);
   delay(100);
   serialDebug("Serial Pulsar C6 Initialized...");
+
+  // ==== Inicialización de BUS I2C ====
+  Wire.begin(SDA_PIN, SCL_PIN);  // Iniciar I2C como maestro
+  serialDebug("I2C Maestro inicializado en SDA: " + String(SDA_PIN) + " SCL: " + String(SCL_PIN));
+  Wire.setTimeOut(10000);
 
   // ==== CONFIGURACIÓN DE PINES COMO SALIDAS POR DEFECTO ====
   for (int i = 0; i < NUM_GPIOS; i++) {
@@ -77,13 +123,28 @@ void loop() {
 
     // ==== DECODIFICACIÓN DE LA OPERACIÓN SOLICITADA ====
     String Function = receiveJSON["Function"];
+    int channel = receiveJSON["channel"] | 0;
+
+
+    /*
+
+
+    */
 
     int opc = 0;
-    if (Function == "ping") opc = 1;             // {"Function":"ping"}
+    if (Function == "ping") opc = 1;  // {"Function":"ping"}
+
+    // Funciones de activacion de gpios y lectura de tramas
     else if (Function == "ping_slave") opc = 2;  // {"Function":"ping_slave"}
     else if (Function == "blink_out") opc = 3;   // {"Function":"blink_out"}
     else if (Function == "sweep") opc = 4;       // {"Function":"sweep"}
     else if (Function == "blink_in") opc = 5;    // {"Function":"blink_in"}
+
+    // Funciones de Accionamiento de relevadores
+    else if (Function == "scanAddr") opc = 6;   // {"Function": "scanAddr"}
+    else if (Function == "channelON") opc = 7;  // {"Function": "channelON", "channel":1}
+    else if (Function == "sleep") opc = 8;      // {"Function": "sleep"}
+
 
     // ==== DESPACHO POR TIPO DE OPERACIÓN ====
     switch (opc) {
@@ -352,6 +413,66 @@ void loop() {
           sendJSON["overall"] = success ? "SUCCESS" : "ERROR";
           serializeJson(sendJSON, Serial);  // Se manda a la PC/Web
           Serial.println();
+          break;
+        }
+
+
+      case 6:  // Escaneo I2C
+        {
+          sendJSON.clear();
+          for (uint8_t addr = 1; addr < 127; addr++) {
+            Wire.beginTransmission(addr);
+            if (Wire.endTransmission() == 0) {
+              String addrHex = "";
+              if (addr < 16) addrHex = "0";
+              addrHex = addrHex + String(addr, HEX);
+              serialDebug("I2C device found at 0x" + addrHex);
+            }
+          }
+          serialDebug("Scan complete...");
+          break;
+        }
+
+
+
+
+      case 7:  // Activación de canal
+        {
+          if (channel >= 1 && channel <= 16) {
+            serialDebug("Test Channel " + String(channel) + " ON...");
+
+            // Mapear canal a comando I2C (0x00-0x0F para canales 1-16)
+            switch (channel) {
+              case 1: sendCommandI2C(0x00); break;
+              case 2: sendCommandI2C(0x01); break;
+              case 3: sendCommandI2C(0x02); break;
+              case 4: sendCommandI2C(0x03); break;
+              case 5: sendCommandI2C(0x04); break;
+              case 6: sendCommandI2C(0x05); break;
+              case 7: sendCommandI2C(0x06); break;
+              case 8: sendCommandI2C(0x07); break;
+              case 9: sendCommandI2C(0x08); break;
+              case 10: sendCommandI2C(0x09); break;
+              case 11: sendCommandI2C(0x0A); break;
+              case 12: sendCommandI2C(0x0B); break;
+              case 13: sendCommandI2C(0x0C); break;
+              case 14: sendCommandI2C(0x0D); break;
+              case 15: sendCommandI2C(0x0E); break;
+              case 16: sendCommandI2C(0x0F); break;
+              default: break;
+            }
+          } else {
+            serialDebug("Invalid channel... Select [1-16]");
+          }
+          delay(100);
+          break;
+        }
+
+      case 8:  // Modo suspensión
+        {
+          serialDebug("Sleep mode...");
+          sendCommandI2C(0xFE);  // Comando de suspensión
+          delay(100);
           break;
         }
 
