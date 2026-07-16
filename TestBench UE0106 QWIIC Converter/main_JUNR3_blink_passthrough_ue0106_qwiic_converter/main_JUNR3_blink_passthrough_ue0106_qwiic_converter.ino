@@ -78,14 +78,11 @@ void loop() {
     else if (Function == "blink_in") opc = 4;   // {"Function":"blink_in"}
     else if (Function == "blink_out") opc = 5;  // {"Function":"blink_out"}
 
-    // ==== DESPACHO POR TIPO DE OPERACIÓN ====
+
     switch (opc) {
 
-      /*
-      Este case solo responde a la PulsarC6 Master el ping recibido por UART
-      Se acciona remoto, recibiendo el ping desde la pulsar para confirmar que existe
-      comunicación entre ambos dispositivos. Es el case 2 de la pulsar quien envia este ping
-      */
+      // ===== COMUNICACIÓN BÁSICA =====
+      // case 1: Ping de validación. Responde a la PULSARC6 con un mensaje JSON de confirmación.
       case 1:
         {
           sendJSON.clear();
@@ -96,10 +93,9 @@ void loop() {
           break;
         }
 
-        /*
-
-*/
-      case 2:  // blink (Recepción ADC con Debug)
+      // ===== PRUEBAS DE BLINK / SEÑAL =====
+      // case 2: Blink de entrada. Configura los pines como entradas y valida la señal recibida por ADC.
+      case 2:
         {
           sendJSON.clear();
           bool debug = false;
@@ -199,6 +195,7 @@ void loop() {
           }
 
           sendJSON["overall"] = success ? "SUCCESS" : "ERROR";
+          sendJSON["Result"] = success ? "OK" : "FAIL";
           serializeJson(sendJSON, Serial);
           Serial.println();
 
@@ -208,6 +205,66 @@ void loop() {
           break;
         }
 
+      // case 4: Blink de salida. Genera una secuencia de pulso desde la JUNR3 hacia la PULSARC6.
+      case 4:
+        {
+          // 1. Configurar los pines analógicos del ATmega como salidas digitales
+          for (int i = 0; i < NUM_GPIOS; i++) {
+            pinMode(GPIOS[i], OUTPUT);
+            digitalWrite(GPIOS[i], LOW);  // Forzar el estado bajo inicial
+          }
+
+          // 2. Avisar a la PULSARC6 que el hardware está listo para empezar
+          sendJSON.clear();
+          sendJSON["status"] = "BLINK_START";
+          serializeJson(sendJSON, Serial);
+          Serial.println();
+
+          // Le damos 50ms a la PULSAR para que entre cómodamente a su ciclo while() de lectura
+          delay(50);
+
+          // 3. Ejecutar la secuencia de pulsos (0V -> 5V -> 0V)
+          for (int i = 0; i < NUM_GPIOS; i++) digitalWrite(GPIOS[i], HIGH);
+          delay(500);  // Mantenemos el pulso alto por medio segundo
+
+          for (int i = 0; i < NUM_GPIOS; i++) digitalWrite(GPIOS[i], LOW);
+
+          // La JUNR3 no necesita mandar reporte de validación, de eso ya se encargó la PULSAR.
+          break;
+        }
+
+      // case 5: Secuencia de blink continuo. Alterna todos los GPIO de forma repetitiva para pruebas visuales.
+      case 5:
+        {
+          Serial.println("Inicio del barrido...");
+
+          for (int i = 0; i < NUM_GPIOS; i++) {
+            pinMode(GPIOS[i], OUTPUT);
+          }
+          delay(50);
+
+          for (int i = 0; i < 10; i++) {
+            digitalWrite(A0_PIN, LOW);
+            digitalWrite(A1_PIN, LOW);
+            digitalWrite(A2_PIN, LOW);
+            digitalWrite(A3_PIN, LOW);
+            digitalWrite(A4_PIN, LOW);
+            digitalWrite(A5_PIN, LOW);
+            delay(1000);
+            digitalWrite(A0_PIN, HIGH);
+            digitalWrite(A1_PIN, HIGH);
+            digitalWrite(A2_PIN, HIGH);
+            digitalWrite(A3_PIN, HIGH);
+            digitalWrite(A4_PIN, HIGH);
+            digitalWrite(A5_PIN, HIGH);
+            delay(1000);
+          }
+          Serial.println("Finalizado");
+          break;
+        }
+
+      // ===== BARRIDO / ADC =====
+      // case 3: Barrido ADC. Lee el voltaje de todos los pines en forma repetitiva y lo imprime por Serial.
       case 3:
         {
           sendJSON.clear();
@@ -247,64 +304,6 @@ void loop() {
           }
 
           Serial.println("--- BARRIDO FINALIZADO ---");
-          break;
-        }
-
-      case 4:  // blink_in (JUNR3 genera los pulsos hacia la PULSAR)
-        {
-          // 1. Configurar los pines analógicos del ATmega como salidas digitales
-          for (int i = 0; i < NUM_GPIOS; i++) {
-            pinMode(GPIOS[i], OUTPUT);
-            digitalWrite(GPIOS[i], LOW);  // Forzar el estado bajo inicial
-          }
-
-          // 2. Avisar a la PULSARC6 que el hardware está listo para empezar
-          sendJSON.clear();
-          sendJSON["status"] = "BLINK_START";
-          serializeJson(sendJSON, Serial);
-          Serial.println();
-
-          // Le damos 50ms a la PULSAR para que entre cómodamente a su ciclo while() de lectura
-          delay(50);
-
-          // 3. Ejecutar la secuencia de pulsos (0V -> 5V -> 0V)
-          for (int i = 0; i < NUM_GPIOS; i++) digitalWrite(GPIOS[i], HIGH);
-          delay(500);  // Mantenemos el pulso alto por medio segundo
-
-          for (int i = 0; i < NUM_GPIOS; i++) digitalWrite(GPIOS[i], LOW);
-
-          // La JUNR3 no necesita mandar reporte de validación, de eso ya se encargó la PULSAR.
-          break;
-        }
-
-      case 5:
-        {
-
-          Serial.println("Inicio del barrido...");
-
-          for (int i = 0; i < NUM_GPIOS; i++) {
-            pinMode(GPIOS[i], OUTPUT);
-          }
-          delay(50);
-
-          for (int i = 0; i < 10; i++) {
-            digitalWrite(A0_PIN, LOW);
-            digitalWrite(A1_PIN, LOW);
-            digitalWrite(A2_PIN, LOW);
-            digitalWrite(A3_PIN, LOW);
-            digitalWrite(A4_PIN, LOW);
-            digitalWrite(A5_PIN, LOW);
-            delay(1000);
-            digitalWrite(A0_PIN, HIGH);
-            digitalWrite(A1_PIN, HIGH);
-            digitalWrite(A2_PIN, HIGH);
-            digitalWrite(A3_PIN, HIGH);
-            digitalWrite(A4_PIN, HIGH);
-            digitalWrite(A5_PIN, HIGH);
-            delay(1000);
-          }
-          Serial.println("Finalizado");
-          break;
         }
 
       default:

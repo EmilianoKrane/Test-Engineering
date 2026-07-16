@@ -19,6 +19,17 @@ Estructura del archivo:
 3. Variables globales y utilidades de depuración.
 4. setup() para inicialización.
 5. loop() con despacho por tipo de operación.
+
+
+Funcionamiento: 
+- Passthrough: Se prueba con el case 3 el cual envia desde la PULSARC6 una señal de 3V3 al
+ modulo convertidor level shifters y este lo eleva a 5V para su lectura desde una tarjeta JUNR3
+
+- Boost Mode: El funcionamiento es igual al anterior solo que se debe retirar la alimentación
+de la tarjeta JUNR3 y esta debe encender dada la salida del boost 
+
+- Buck Mode: Se debe retirar la alimentación de la tarjeta pulsar y esta deberá encender
+por la alimentación del buck
 */
 
 // ==== BIBLIOTECAS ====
@@ -138,24 +149,18 @@ void loop() {
     else if (Function == "ping_slave") opc = 2;  // {"Function":"ping_slave"}
     else if (Function == "blink_out") opc = 3;   // {"Function":"blink_out"}
     else if (Function == "blink_in") opc = 5;    // {"Function":"blink_in"}
-    else if (Function == "sweep") opc = 4;       // {"Function":"sweep"}
+    else if (Function == "sweep_out") opc = 4;   // {"Function":"sweep_out"}
     else if (Function == "sweep_in") opc = 10;   // {"Function":"sweep_in"}
 
-    // Funciones de Accionamiento de relevadores
-    else if (Function == "scanAddr") opc = 6;   // {"Function": "scanAddr"}
-    else if (Function == "channelON") opc = 7;  // {"Function": "channelON", "channel":1}
-    else if (Function == "sleep") opc = 8;      // {"Function": "sleep"}
-
-    else if (Function == "testAll") opc = 9;  // {"Function": "testAll"}
+    else if (Function == "testAll") opc = 6;           // {"Function": "testAll"}
+    else if (Function == "passthrough_test") opc = 7;  // {"Function": "passthrough_test"}
+    else if (Function == "buck_test") opc = 8;         // {"Function": "buck_test"}
+    else if (Function == "boost_test") opc = 9;        // {"Function": "boost_test"}
 
 
-    // ==== DESPACHO POR TIPO DE OPERACIÓN ====
     switch (opc) {
-
-      /*
-      case 1. es un ping a la pulsar desde el monitor serie para validar que es capaz de 
-      responder y de cumplir con el resto de comando de funcionamiento por JSON
-      */
+      // ===== COMUNICACIÓN BÁSICA =====
+      // case 1: Ping de validación. Responde al monitor serie para confirmar que la PULSARC6 está operativa.
       case 1:
         {
           sendJSON.clear();
@@ -165,51 +170,41 @@ void loop() {
           break;
         }
 
-      /*
-      Envia un ping por el UART2 Master conectado a la JUNR3 para validar que existe comunicacion
-      entre ambas tarjetas de desarrollo para llevar a cabo el testeo
-      */
-      case 2:  // ping_slave
+      // ===== COMUNICACIÓN UART CON EL ESCLAVO JUNR3 =====
+      // case 2: Ping hacia la JUNR3 por UART2. Verifica que el enlace entre ambas placas funciona.
+      case 2:
         {
           serialDebug("Enviando PING hacia esclavo JUNR3...");
 
-          // 1. Limpiar buffer y enviar el JSON de ping al esclavo
           sendJSON.clear();
           sendJSON["Function"] = "ping";
           serializeJson(sendJSON, Master);
-          Master.println();  // Envía por UART a la JUNR3
+          Master.println();
 
-          // 2. Bloque de escucha con Timeout no bloqueante
           unsigned long startWait = millis();
           bool responseReceived = false;
 
-          // Esperamos hasta 1.5 segundos por la respuesta del esclavo
           while (millis() - startWait < 1500) {
             if (Master.available()) {
-              // Leer la línea completa que responde la JUNR3
               String slaveResponse = Master.readStringUntil('\n');
 
-              // Intentar parsear para asegurar que el JSON es válido (opcional, pero buena práctica)
               StaticJsonDocument<512> slaveDoc;
               DeserializationError error = deserializeJson(slaveDoc, slaveResponse);
 
               if (!error) {
-                // Si el JSON es correcto, imprimimos un log limpio y estructurado en el Serial principal
                 Serial.print("[UART-SLAVE-OK]: ");
                 serializeJson(slaveDoc, Serial);
                 Serial.println();
               } else {
-                // Si llegó texto plano o un JSON corrupto, lo mostramos como texto crudo
                 Serial.print("[UART-SLAVE-RAW]: ");
                 Serial.println(slaveResponse);
               }
 
               responseReceived = true;
-              break;  // Salimos del bucle de espera inmediatamente
+              break;
             }
           }
 
-          // 3. Alerta en caso de que el esclavo esté desconectado o sin energía
           if (!responseReceived) {
             serialDebug("Error: Timeout excedido. JUNR3 no responde.");
           }
@@ -217,27 +212,20 @@ void loop() {
           break;
         }
 
-
-        /*
-Este case es un blink de salida, la pulsar realiza un encendido y apagado de los gpios
-definidos para el testeo, dando una salida digital de 0V a 3V3, posterior a un handshake con 
-
-
-*/
-      case 3:  // blink_out
+      // ===== PRUEBAS DE BLINK / SEÑAL =====
+      // case 3: Blink de salida. La PULSARC6 ordena a la JUNR3 generar un pulso y valida la respuesta.
+      case 3:
         {
           serialDebug("Iniciando secuencia Blink_out hacia JUNR3...");
 
-          // 1. Avisar a la JUNR3 que se configure como ADC
           sendJSON.clear();
           sendJSON["Function"] = "blink";
           serializeJson(sendJSON, Master);
           Master.println();
 
-          // 2. Esperar confirmación sincrónica (ADC_READY)
           long waitStart = millis();
           bool isReady = false;
-          while (millis() - waitStart < 2000) {  // Timeout de 2 segundos
+          while (millis() - waitStart < 2000) {
             if (Master.available()) {
               String rx = Master.readStringUntil('\n');
               StaticJsonDocument<256> rxDoc;
@@ -251,28 +239,22 @@ definidos para el testeo, dando una salida digital de 0V a 3V3, posterior a un h
 
           if (!isReady) {
             serialDebug("Error: JUNR3 timeout o no respondió al handshake");
-            break;  // Abortar si no hay respuesta
+            break;
           }
 
-          // 3. Ejecutar los pulsos (0V -> 3.3V -> 0V)
-          // Nos aseguramos que inicie en LOW
           for (int i = 0; i < NUM_GPIOS; i++) digitalWrite(GPIOS[i], LOW);
           delay(100);
 
-          // Flanco de subida
           for (int i = 0; i < NUM_GPIOS; i++) digitalWrite(GPIOS[i], HIGH);
-          delay(500);  // Tiempo en estado alto
+          delay(500);
 
-          // Flanco de bajada
           for (int i = 0; i < NUM_GPIOS; i++) digitalWrite(GPIOS[i], LOW);
 
-          // 4. Esperar el reporte de validación final de la JUNR3
           waitStart = millis();
           bool validationReceived = false;
-          while (millis() - waitStart < 3000) {  // Timeout de 3 segundos para los resultados
+          while (millis() - waitStart < 3000) {
             if (Master.available()) {
               String rx = Master.readStringUntil('\n');
-              // Reenviar el JSON exacto a la interfaz web
               Serial.println(rx);
               validationReceived = true;
               break;
@@ -285,6 +267,7 @@ definidos para el testeo, dando una salida digital de 0V a 3V3, posterior a un h
           break;
         }
 
+      // case 4: Sweep de salida. Activa un barrido de los GPIO para comprobar el estado del enlace.
       case 4:
         {
           sendJSON.clear();
@@ -313,25 +296,23 @@ definidos para el testeo, dando una salida digital de 0V a 3V3, posterior a un h
           break;
         }
 
-      case 5:  // blink_in (PULSAR lee la señal de la JUNR3)
+      // case 5: Blink de entrada. La PULSARC6 solicita a la JUNR3 que genere una señal y luego valida la lectura ADC.
+      case 5:
         {
           serialDebug("Iniciando lectura Blink_in desde JUNR3...");
 
-          // 1. Configurar pines de la PULSAR como entrada ADC
           for (int i = 0; i < NUM_GPIOS; i++) {
             pinMode(GPIOS[i], INPUT_PULLDOWN);
           }
 
-          // 2. Avisar a la JUNR3 que empiece a mandar los pulsos
           sendJSON.clear();
           sendJSON["Function"] = "blink_in";
           serializeJson(sendJSON, Master);
           Master.println();
 
-          // 3. Esperar confirmación sincrónica (BLINK_START)
           long waitStart = millis();
           bool isReady = false;
-          while (millis() - waitStart < 2000) {  // Timeout de 2 segundos
+          while (millis() - waitStart < 2000) {
             if (Master.available()) {
               String rx = Master.readStringUntil('\n');
               StaticJsonDocument<256> rxDoc;
@@ -345,13 +326,10 @@ definidos para el testeo, dando una salida digital de 0V a 3V3, posterior a un h
 
           if (!isReady) {
             serialDebug("Error: JUNR3 timeout o no respondió al handshake de blink_in");
-            break;  // Abortar si el esclavo no responde
+            break;
           }
 
-          // 4. Máquina de estados para validar la señal analógica (ADC ESP32-C6)
           int pinStates[NUM_GPIOS] = { 0 };
-
-          // ESP32-C6 a 3.3V
           float maxVolts[NUM_GPIOS] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
           float minVolts[NUM_GPIOS] = { 3.3, 3.3, 3.3, 3.3, 3.3, 3.3 };
 
@@ -365,8 +343,6 @@ definidos para el testeo, dando una salida digital de 0V a 3V3, posterior a un h
               allFinished = false;
 
               int raw_adc = analogRead(GPIOS[i]);
-
-              // Fórmula para el ESP32-C6 (12-bits, 3.3V)
               float voltage = (raw_adc / 4095.0) * 3.3;
 
               if (voltage > maxVolts[i]) maxVolts[i] = voltage;
@@ -374,13 +350,12 @@ definidos para el testeo, dando una salida digital de 0V a 3V3, posterior a un h
 
               int oldState = pinStates[i];
 
-              // Umbrales calculados asumiendo que el divisor bajará los 5V a ~3.3V
               switch (pinStates[i]) {
                 case 0:
                   if (voltage <= 0.3) pinStates[i] = 1;
                   break;
                 case 1:
-                  if (voltage >= 1.1) pinStates[i] = 2;  // Espera al menos 1.2V del divisor
+                  if (voltage >= 2.1) pinStates[i] = 2;
                   break;
                 case 2:
                   if (voltage <= 0.3) pinStates[i] = 3;
@@ -401,7 +376,6 @@ definidos para el testeo, dando una salida digital de 0V a 3V3, posterior a un h
             }
           }
 
-          // 5. Reporte de Debug en Serial de la PULSAR
           Serial.println("\n--- REPORTE DE VOLTAJES MAX/MIN (ESP32-C6) ---");
           for (int i = 0; i < NUM_GPIOS; i++) {
             Serial.print("GPIO ");
@@ -414,7 +388,6 @@ definidos para el testeo, dando una salida digital de 0V a 3V3, posterior a un h
             Serial.println(pinStates[i]);
           }
 
-          // 6. Imprimir el JSON resultante para la Interfaz Web
           sendJSON.clear();
           sendJSON["Function"] = "blink_in_result";
           JsonArray results = sendJSON.createNestedArray("pins_status");
@@ -430,89 +403,28 @@ definidos para el testeo, dando una salida digital de 0V a 3V3, posterior a un h
           }
 
           sendJSON["overall"] = success ? "SUCCESS" : "ERROR";
-          serializeJson(sendJSON, Serial);  // Se manda a la PC/Web
+          serializeJson(sendJSON, Serial);
           Serial.println();
           break;
         }
 
 
-      case 6:  // Escaneo I2C
+      // ===== PRUEBAS DE PASSTHROUGH / SECUENCIAS COMBINADAS =====
+      // case 6: Secuencia de test combinado. Coordina el blink hacia la JUNR3 y deja preparado el bloque para futuras extensiones.
+      case 6:
         {
           sendJSON.clear();
-          for (uint8_t addr = 1; addr < 127; addr++) {
-            Wire.beginTransmission(addr);
-            if (Wire.endTransmission() == 0) {
-              String addrHex = "";
-              if (addr < 16) addrHex = "0";
-              addrHex = addrHex + String(addr, HEX);
-              serialDebug("I2C device found at 0x" + addrHex);
-            }
-          }
-          serialDebug("Scan complete...");
-          break;
-        }
-
-
-      case 7:  // Activación de canal
-        {
-          if (channel >= 1 && channel <= 16) {
-            serialDebug("Test Channel " + String(channel) + " ON...");
-
-            // Mapear canal a comando I2C (0x00-0x0F para canales 1-16)
-            switch (channel) {
-              case 1: sendCommandI2C(0x00); break;
-              case 2: sendCommandI2C(0x01); break;
-              case 3: sendCommandI2C(0x02); break;
-              case 4: sendCommandI2C(0x03); break;
-              case 5: sendCommandI2C(0x04); break;
-              case 6: sendCommandI2C(0x05); break;
-              case 7: sendCommandI2C(0x06); break;
-              case 8: sendCommandI2C(0x07); break;
-              case 9: sendCommandI2C(0x08); break;
-              case 10: sendCommandI2C(0x09); break;
-              case 11: sendCommandI2C(0x0A); break;
-              case 12: sendCommandI2C(0x0B); break;
-              case 13: sendCommandI2C(0x0C); break;
-              case 14: sendCommandI2C(0x0D); break;
-              case 15: sendCommandI2C(0x0E); break;
-              case 16: sendCommandI2C(0x0F); break;
-              default: break;
-            }
-          } else {
-            serialDebug("Invalid channel... Select [1-16]");
-          }
-          delay(100);
-          break;
-        }
-
-      case 8:  // Modo suspensión
-        {
-          serialDebug("Sleep mode...");
-          sendCommandI2C(0xFE);  // Comando de suspensión
-          delay(100);
-          break;
-        }
-
-
-      case 9:
-        {
-          sendJSON.clear();
-
-          // ==== SECUENCIA DE TESTEO PASSTHOUGH ====
-          /*Implica tener Módulos con alimentación independiente*/
           serialDebug("Iniciando secuencia Blink_out hacia JUNR3...");
 
-          // 1. Avisar a la JUNR3 que se configure como ADC
           sendJSON.clear();
           sendJSON["Function"] = "blink";
           serializeJson(sendJSON, Master);
           Master.println();
           delay(20);
 
-          // 2. Esperar confirmación sincrónica (ADC_READY)
           long waitStart = millis();
           bool isReady = false;
-          while (millis() - waitStart < 2000) {  // Timeout de 2 segundos
+          while (millis() - waitStart < 2000) {
             if (Master.available()) {
               String rx = Master.readStringUntil('\n');
               StaticJsonDocument<256> rxDoc;
@@ -526,28 +438,21 @@ definidos para el testeo, dando una salida digital de 0V a 3V3, posterior a un h
 
           if (!isReady) {
             serialDebug("Error: JUNR3 timeout o no respondió al handshake");
-            //break;  // Abortar si no hay respuesta
           }
 
-          // 3. Ejecutar los pulsos (0V -> 3.3V -> 0V)
-          // Nos aseguramos que inicie en LOW
           for (int i = 0; i < NUM_GPIOS; i++) digitalWrite(GPIOS[i], LOW);
           delay(100);
 
-          // Flanco de subida
           for (int i = 0; i < NUM_GPIOS; i++) digitalWrite(GPIOS[i], HIGH);
-          delay(500);  // Tiempo en estado alto
+          delay(500);
 
-          // Flanco de bajada
           for (int i = 0; i < NUM_GPIOS; i++) digitalWrite(GPIOS[i], LOW);
 
-          // 4. Esperar el reporte de validación final de la JUNR3
           waitStart = millis();
           bool validationReceived = false;
-          while (millis() - waitStart < 3000) {  // Timeout de 3 segundos para los resultados
+          while (millis() - waitStart < 3000) {
             if (Master.available()) {
               String rx = Master.readStringUntil('\n');
-              // Reenviar el JSON exacto a la interfaz web
               Serial.println(rx);
               validationReceived = true;
               break;
@@ -558,16 +463,32 @@ definidos para el testeo, dando una salida digital de 0V a 3V3, posterior a un h
             serialDebug("Error: JUNR3 no envió resultados de validación");
           }
 
-          // ==== SECUENCIA DE TESTEO BOOST 3V3 -> 5V ====
-
-
-          // ==== SECUENCIA DE TESTEO BUCK 5V -> 3V3 ====
-
-
-
           break;
         }
 
+      case 7:
+        {
+          break;
+        }
+
+      case 8:
+        {
+          break;
+        }
+
+      case 9:
+        {
+          break;
+        }
+
+
+
+
+
+
+
+      // ===== BARRIDO / ADC DE ENTRADA =====
+      // case 10: Sweep de entrada. Ejecuta un barrido analógico y lo reporta por Serial para diagnóstico.
       case 10:
         {
           sendJSON.clear();
@@ -580,16 +501,12 @@ definidos para el testeo, dando una salida digital de 0V a 3V3, posterior a un h
           serializeJson(sendJSON, Master);
           Master.println();
 
-          // Damos un pequeño respiro para que la terminal no imprima basura inicial
           delay(50);
           Serial.println("--- INICIANDO BARRIDO RAW ADC Y VOLTAJE (ATmega 10-bit / 5V -> 3V3) ---");
 
           for (int i = 0; i < 100; i++) {
-            // Iteramos sobre los pines para que el código quede impecable y escalable
             for (int j = 0; j < NUM_GPIOS; j++) {
               int raw_adc = analogRead(GPIOS[j]);
-
-              // Conversión con la fórmula correcta para el 
               float voltage = (raw_adc / 4095.0) * 3.3;
 
               Serial.print("A");
@@ -597,10 +514,9 @@ definidos para el testeo, dando una salida digital de 0V a 3V3, posterior a un h
               Serial.print(": ");
               Serial.print(raw_adc);
               Serial.print(" (");
-              Serial.print(voltage, 2);  // El '2' le dice que imprima solo dos decimales (ej. 3.60V)
+              Serial.print(voltage, 2);
               Serial.print("V)");
 
-              // Si no es el último pin, imprimimos el separador. Si es el último, damos el salto de línea.
               if (j < NUM_GPIOS - 1) {
                 Serial.print(" | ");
               } else {
@@ -613,6 +529,9 @@ definidos para el testeo, dando una salida digital de 0V a 3V3, posterior a un h
           Serial.println("--- BARRIDO FINALIZADO ---");
           break;
         }
+
+
+
 
 
 
