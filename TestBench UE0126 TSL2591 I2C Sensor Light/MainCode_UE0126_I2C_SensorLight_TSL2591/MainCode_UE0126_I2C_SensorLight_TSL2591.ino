@@ -5,8 +5,8 @@
 #include <Adafruit_TSL2591.h>
 
 #define RUN_BUTTON 4  // Botón de Arranque
-#define SDA_PIN 6
-#define SCL_PIN 7
+#define SDA_PIN 21
+#define SCL_PIN 22
 #define RELAYUSB 20  // GPIO020 RELAY USBC
 
 String JSON_entrada;                   ///< Buffer para recibir JSON desde PagWeb

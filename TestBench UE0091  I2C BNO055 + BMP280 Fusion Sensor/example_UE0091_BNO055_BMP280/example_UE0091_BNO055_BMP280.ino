@@ -5,7 +5,7 @@
 #include <utility/imumaths.h>
 
 // BNO055: orientación y movimiento
-Adafruit_BNO055 bno(55, 0x28, &Wire);
+Adafruit_BNO055 bno(55, 0x29, &Wire);
 
 // BMP280: temperatura y presión
 Adafruit_BMP280 bmp;
@@ -18,6 +18,16 @@ void setup() {
     ;
 
   Wire.begin(6, 7);
+
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      String addrHex = "";
+      if (addr < 16) addrHex = "0";
+      addrHex = addrHex + String(addr, HEX);
+      Serial.println("I2C device found at 0x" + addrHex);
+    }
+  }
 
   // Inicializar BNO055
   if (!bno.begin()) {

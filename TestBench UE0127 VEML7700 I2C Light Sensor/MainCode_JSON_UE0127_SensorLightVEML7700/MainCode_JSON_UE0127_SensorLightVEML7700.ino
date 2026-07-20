@@ -74,7 +74,7 @@ void setup() {
   Wire.begin(SDA_PIN, SCL_PIN);
 
   // ==== Configuración de pines ====
-  pinMode(RUN_BUTTON, INPUT);
+  pinMode(RUN_BUTTON, INPUT_PULLUP);
   pinMode(RELAYUSB, OUTPUT);
   digitalWrite(RELAYUSB, LOW);
 }
