@@ -5,16 +5,26 @@
 #include <Wire.h>
 #include "DevLab_MAX30102.h"
 #include "spo2_algorithm.h"
+#include <Arduino.h>
+#include <ArduinoJson.h>
+#include <Wire.h>
 
-#define SDA_PIN 6
-#define SCL_PIN 7
+// ==== DECLARACIÓN DE PINES ====
+#define RUN_BUTTON 4  // >> Botonera de Arranque - Pin para botón de inicio físico
+#define SDA_PIN 6     // >> SDA para I2C con el esclavo - Línea de datos I2C
+#define SCL_PIN 7     // >> SCL para I2C con el esclavo - Línea de reloj I2C
 
-#define SPO2_SAMPLES 100
 
+
+// ==== CREACIÓN DE OBJETOS ====
 MAX30105 sensor;
+StaticJsonDocument<1024> receiveJSON;  ///< Documento JSON para parsear datos recibidos
+StaticJsonDocument<1024> sendJSON;     ///< Documento JSON para armar respuestas
 
-// BPM measurement
-const byte RATE_SIZE = 8;
+
+// ==== DECLARACIÓN DE VARIABLES GLOBALES ====
+#define SPO2_SAMPLES 100
+const byte RATE_SIZE = 8;  // BPM measurement
 float rates[RATE_SIZE];
 byte rateSpot = 0;
 byte validRates = 0;
@@ -49,25 +59,29 @@ const long FINGER_THRESHOLD = 8000;
 const long SIGNAL_LOW = 25000;
 const long SIGNAL_GOOD_MAX = 110000;
 
+
+// ==== FUNCTIONES DE UTILIDAD ====
+void serialDebug(String str) {
+  StaticJsonDocument<255> doc;
+  doc["debug"] = str;
+  serializeJson(doc, Serial);
+  Serial.println();
+}
+
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
-
-  Serial.println();
-  Serial.println(F("==============================================="));
-  Serial.println(F(" MAX30102 - BPM + SpO2 experimental"));
-  Serial.println(F("==============================================="));
-  Serial.println(F("Not medical equipment. Experimental use only."));
-  Serial.println();
-
   Wire.begin(SDA_PIN, SCL_PIN);
 
-  if (!sensor.begin(Wire, I2C_SPEED_FAST)) {
-    Serial.println(F("MAX30102 not detected"));
-    while (1)
-      ;
-  }
+  if (!sensor.begin(Wire, I2C_SPEED_FAST)) serialDebug("MAX30102 not detected...");
+  else serialDebug("MAX30102 initialized...");
 
+  // ==== DECLARACIÓN DE PINES ====
+  pinMode(RUN_BUTTON, INPUT_PULLUP);
+
+
+  // ==== CONFIGURACIÓN DEL SENSOR ====
   sensor.setup(
     50,    // LED brightness
     4,     // Sample average
@@ -76,17 +90,58 @@ void setup() {
     411,   // Pulse width
     16384  // ADC range
   );
-
   sensor.setPulseAmplitudeRed(0x24);
   sensor.setPulseAmplitudeIR(0x24);
   sensor.setPulseAmplitudeGreen(0);
-
-  Serial.println(F("Place your finger gently on the sensor."));
-  Serial.println(F("Avoid pressing hard and wait 10 to 20 seconds."));
-  Serial.println();
 }
 
 void loop() {
+
+  // ==== Manejo del botón de arranque ====
+  if (digitalRead(RUN_BUTTON) == HIGH) {
+    sendJSON.clear();  // Limpia cualquier dato previo
+    delay(100);        // Debounce
+
+    if (digitalRead(RUN_BUTTON) == LOW) {
+      serialDebug("Arranque por botonera");
+      sendJSON["Run"] = "OK";           // Envio de corriente JSON para corto
+      serializeJson(sendJSON, Serial);  // Envío de datos por JSON a la PagWeb
+      Serial.println();
+    }
+  }
+
+  if (Serial.available()) {
+    String JSON_in = Serial.readStringUntil('\n');
+    DeserializationError error = deserializeJson(receiveJSON, JSON_in);
+
+    String Function = receiveJSON["Function"];
+
+    int opc = 0;
+    if (Function == "ping") opc = 1;  // {"Function":"ping"}
+
+
+    switch (opc) {
+      case 1:
+        {
+          sendJSON["ping"] = "pong";
+          serializeJson(sendJSON, Serial);
+          Serial.println();
+          break;
+        }
+
+      default: serialDebug("Invalid option..."); break;
+    }
+  }
+}
+
+
+
+
+
+
+/*
+
+
   long irValue = sensor.getIR();
   long redValue = sensor.getRed();
 
@@ -231,4 +286,8 @@ void loop() {
 
   Serial.println(line);
   delay(200);
-}
+
+
+
+
+*/
