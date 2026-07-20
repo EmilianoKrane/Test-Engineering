@@ -1,20 +1,12 @@
 /**
- * Firmware TestBench LM2596 Multi-Módulo
+ * 
  *
- * Este firmware actúa como puente entre la interfaz de pruebas y el testbench,
- * permitiendo ejecutar pruebas sobre hasta 4 módulos reguladores step-up LM2596.
- *
- * Proporciona:
- *  - control por UART/JSON desde la interfaz web,
- *  - mediciones de corriente con sensores INA219,
- *  - control de relés para cortocircuito y alimentación,
- *  - pruebas individuales y barridos automáticos.
+ * Este firmware actúa como 
  */
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <Wire.h>
-#include <HardwareSerial.h>
 #include <Adafruit_INA219.h>
 
 // ==== DECLARACIÓN DE PINES ====
@@ -23,18 +15,15 @@
  * Estos pines están configurados para la comunicación I2C, UART y entrada de botón.
  */
 #define RUN_BUTTON 4  // >> Botonera de Arranque - Pin para botón de inicio físico
-#define SDA_PIN 21    // >> SDA para I2C con el esclavo - Línea de datos I2C
-#define SCL_PIN 22    // >> SCL para I2C con el esclavo - Línea de reloj I2C
-
+#define SDA_PIN 6    // >> SDA para I2C con el esclavo - Línea de datos I2C
+#define SCL_PIN 7    // >> SCL para I2C con el esclavo - Línea de reloj I2C
 
 
 // ==== CREACIÓN DE OBJETOS ====
 /**
- * Objetos globales para manejo de comunicación serial y JSON.
- * PagWeb: Comunicación UART con la interfaz web
- * JSON buffers: Para parseo y creación de mensajes JSON
+
  */
-HardwareSerial PagWeb(1);          // Crear objeto para UART2 en PULSAR como PagWeb
+
 TwoWire I2CBus = TwoWire(0);       // Instancia TCP/I2C reservada para uso futuro
 Adafruit_INA219 ina219_in(0x40);   // Sensor de corriente INA219 en entrada del testbench
 Adafruit_INA219 ina219_out(0x41);  // Sensor de corriente INA219 en salida del testbench
@@ -53,7 +42,7 @@ float voltajeSensor = 0;           // Variable de lectura de voltaje con el sens
 
 
 /**
- * @brief Obtiene la corriente medida por el INA219 de entrada.
+ * @brief Obtiene la corriente medida por el INA219 de entrada 0x40.
  * @return Corriente en amperios.
  */
 float current_in() {
@@ -69,7 +58,7 @@ float current_in() {
 }
 
 /**
- * @brief Obtiene la corriente medida por el INA219 de salida.
+ * @brief Obtiene la corriente medida por el INA219 de salida 0x41.
  * @return Corriente en amperios.
  */
 float current_out() {
@@ -90,17 +79,10 @@ float current_out() {
  * @param str Mensaje a enviar por Serial en formato JSON
  */
 void serialDebug(String str) {
-  str.replace("\"", "\\\"");  // Escapa comillas para JSON válido
-  Serial.println("{\"debug\": \"" + str + "\"}");
-}
-
-/**
- * @brief Función de depuración para interfaz web
- * @param str Mensaje a enviar por UART a la interfaz web en formato JSON
- */
-void pagwebDebug(String str) {
-  str.replace("\"", "\\\"");  // Escapa comillas
-  PagWeb.println("{\"debug\": \"" + str + "\"}");
+  StaticJsonDocument<255> doc;
+  doc["debug"] = str;
+  serializeJson(doc, Serial);
+  Serial.println("");
 }
 
 
@@ -110,23 +92,18 @@ void pagwebDebug(String str) {
  */
 void setup() {
   // ==== Inicialización de Comunicación Serie ====
-  Serial.begin(115200);                        // Comunicación serial para depuración
-  PagWeb.begin(115200, SERIAL_8N1, RX2, TX2);  // UART para interfaz web
+  Serial.begin(115200);  // Comunicación serial para depuración
   delay(100);
   serialDebug("Serial Initialized...");
-  pagwebDebug("Test Multi LM2596 Initialized...");
 
   // ==== Inicialización de BUS I2C ====
   Wire.begin(SDA_PIN, SCL_PIN);  // Iniciar I2C como maestro
-  serialDebug("I2C Maestro inicializado en SDA: " + String(SDA_PIN) + " SCL: " + String(SCL_PIN));
+  serialDebug("I2C inicializado en SDA: " + String(SDA_PIN) + " SCL: " + String(SCL_PIN));
 
   //I2CBus.begin(SDA_PIN, SCL_PIN);
   if (!ina219_in.begin(&Wire)) {
     serialDebug("Current sensor INA219_out 0x41 no initilized...");
-    pagwebDebug("Current sensor INA219_out 0x41 no initilized...");
-    while (1) { delay(10); }
   }
-  pagwebDebug("Test LM2596 StepUp Ready...");
 
   // ==== Declaración de GPIOS ====
   pinMode(RUN_BUTTON, INPUT);
@@ -149,7 +126,7 @@ void loop() {
     if (digitalRead(RUN_BUTTON) == LOW) {
       serialDebug("Arranque por botonera");
       sendJSON["Run"] = "OK";           // Envio de corriente JSON para corto
-      serializeJson(sendJSON, PagWeb);  // Envío de datos por JSON a la PagWeb
+      serializeJson(sendJSON, Serial);  // Envío de datos por JSON a la PagWeb
       Serial.println();
     }
   }
@@ -166,9 +143,6 @@ void loop() {
      * Procesamiento de comandos JSON recibidos:
      * - ping: Verificación de conectividad
      * - scanAddr: Escaneo de dispositivos I2C
-     * - channelON: Activación de canal específico
-     * - sweep: Barrido automático de relevadores
-     * - sleep: Modo de suspensión
      */
     String Function = receiveJSON["Function"];
     int channel = receiveJSON["channel"] | 0;
@@ -176,14 +150,14 @@ void loop() {
     int opc = 0;
     if (Function == "ping") opc = 1;                // {"Function": "ping"}
     else if (Function == "scanAddr") opc = 2;       // {"Function": "scanAddr"}
-    else if (Function == "currentSensor") opc = 7;  // {"Function": "currentSensor"}
+    else if (Function == "currentSensor") opc = 3;  // {"Function": "currentSensor"}
 
     switch (opc) {
       case 1:  // Ping
         {
           sendJSON.clear();
           sendJSON["ping"] = "pong";
-          serializeJson(sendJSON, PagWeb);
+          serializeJson(sendJSON, Serial);
           Serial.println();
           break;
         }
@@ -198,21 +172,24 @@ void loop() {
               if (addr < 16) addrHex = "0";
               addrHex = addrHex + String(addr, HEX);
               serialDebug("I2C device found at 0x" + addrHex);
-              
             }
           }
           break;
         }
 
-      case 7:
+      case 3:
         {
           sendJSON.clear();
-          float minCurrent = 1.8;
+          float minCurrent = 0.4;
+          float maxCurrent = 0.6;
           delay(50);
           corrienteSensor = current_in();
           serialDebug("Current " + String(corrienteSensor) + " A");
-          if (corrienteSensor > minCurrent) sendJSON["Result"] = "OK";
-          serializeJson(sendJSON, PagWeb);
+          bool state = corrienteSensor > minCurrent && corrienteSensor < maxCurrent;
+          if (state) sendJSON["Result"] = "OK";
+          else sendJSON["Result"] = "FAIL";
+          sendJSON["current"] = String(corrienteSensor) + " A";
+          serializeJson(sendJSON, Serial);
           Serial.println();
           break;
         }
