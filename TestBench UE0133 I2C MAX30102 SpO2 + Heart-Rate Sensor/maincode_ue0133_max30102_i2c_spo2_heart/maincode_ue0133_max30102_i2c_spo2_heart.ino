@@ -3,13 +3,17 @@
 #include "spo2_algorithm.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <HardwareSerial.h>
 
 // ==== DECLARACIÓN DE PINES ====
 #define RUN_BUTTON 4  // >> Botonera de Arranque
 #define SDA_PIN 6     // >> SDA para I2C
 #define SCL_PIN 7     // >> SCL para I2C
+#define RX2 15        // >> GPIO15 como RX de UART2 - Recepción de datos desde interfaz web
+#define TX2 19        // >> GPIO19 como TX de UART2 - Transmisión de datos a interfaz web
 
 // ==== CREACIÓN DE OBJETOS ====
+HardwareSerial PagWeb(1);  // Crear objeto para UART2 en PULSAR como PagWeb
 MAX30105 sensor;
 StaticJsonDocument<1024> receiveJSON;
 StaticJsonDocument<1024> sendJSON;
@@ -116,30 +120,39 @@ void processVitalSigns(long irValue, long redValue) {
   }
 }
 
+void pagwebDebug(String str) {
+  StaticJsonDocument<255> doc;
+  doc["debug"] = str;
+  serializeJson(doc, PagWeb);
+  PagWeb.println();
+}
+
 void setup() {
   Serial.begin(115200);
-  delay(1000);
+  PagWeb.begin(115200, SERIAL_8N1, RX2, TX2);  // UART para interfaz web
+  delay(100);
   Wire.begin(SDA_PIN, SCL_PIN);
   pinMode(RUN_BUTTON, INPUT_PULLUP);
+  pagwebDebug("Test Multi LM2596 Initialized...");
 }
 
 void loop() {
   // ==== Manejo del botón de arranque ====
-  if (digitalRead(RUN_BUTTON) == LOW) {
-    delay(50);  // Debounce
+  if (digitalRead(RUN_BUTTON) == HIGH) {
+    sendJSON.clear();  // Limpia cualquier dato previo
+    delay(100);        // Debounce
+
     if (digitalRead(RUN_BUTTON) == LOW) {
-      sendJSON.clear();
-      sendJSON["Run"] = "OK";
-      serializeJson(sendJSON, Serial);
-      Serial.println();
-      while (digitalRead(RUN_BUTTON) == LOW)
-        ;  // Espera a que se suelte el botón
+      serialDebug("Arranque por botonera");
+      sendJSON["Run"] = "OK";           // Envio de corriente JSON para corto
+      serializeJson(sendJSON, PagWeb);  // Envío de datos por JSON a la PagWeb
+      PagWeb.println();
     }
   }
 
   // ==== Parseo de comandos Serial ====
-  if (Serial.available()) {
-    String JSON_in = Serial.readStringUntil('\n');
+  if (PagWeb.available()) {
+    String JSON_in = PagWeb.readStringUntil('\n');
 
     // CANDADO 2: Validar que el JSON recibido tenga formato correcto
     DeserializationError error = deserializeJson(receiveJSON, JSON_in);
@@ -154,14 +167,15 @@ void loop() {
     if (Function == "ping") opc = 1;             // {"Function":"ping"}
     else if (Function == "initSensor") opc = 2;  // {"Function":"initSensor"}
     else if (Function == "readSensor") opc = 3;  // {"Function":"readSensor"}
+    else if (Function == "restart") opc = 4;     // {"Function":"restart"}
 
     switch (opc) {
       case 1:  // PING
         {
           sendJSON.clear();
           sendJSON["ping"] = "pong";
-          serializeJson(sendJSON, Serial);
-          Serial.println();
+          serializeJson(sendJSON, PagWeb);
+          PagWeb.println();
           break;
         }
 
@@ -184,10 +198,12 @@ void loop() {
           }
           serializeJson(sendJSON, Serial);
           Serial.println();
+          serializeJson(sendJSON, PagWeb);
+          PagWeb.println();
           break;
         }
 
-case 3:  // LEER MUESTRAS EN STREAM CONTINUO
+      case 3:  // LEER MUESTRAS EN STREAM CONTINUO
         {
           sendJSON.clear();
 
@@ -195,6 +211,8 @@ case 3:  // LEER MUESTRAS EN STREAM CONTINUO
             sendJSON["error"] = "Sensor no inicializado. Ejecute initSensor primero.";
             serializeJson(sendJSON, Serial);
             Serial.println();
+            serializeJson(sendJSON, PagWeb);
+            PagWeb.println();
             break;
           }
 
@@ -211,41 +229,60 @@ case 3:  // LEER MUESTRAS EN STREAM CONTINUO
               sendJSON["status"] = "No finger detected";
               serializeJson(sendJSON, Serial);
               Serial.println();
+              serializeJson(sendJSON, PagWeb);
+              PagWeb.println();
 
               // Reset de variables matemáticas
-              bpmInst = 0; bpmAvg = 0; validRates = 0; rateSpot = 0;
-              lastValidSpO2 = 0; spo2Avg = 0; spo2Ready = false;
-              spo2Index = 0; irDC = 0; threshold = 80; wasAbove = false;
-              
-              break; // <-- Sale del bucle infinito
+              bpmInst = 0;
+              bpmAvg = 0;
+              validRates = 0;
+              rateSpot = 0;
+              lastValidSpO2 = 0;
+              spo2Avg = 0;
+              spo2Ready = false;
+              spo2Index = 0;
+              irDC = 0;
+              threshold = 80;
+              wasAbove = false;
+
+              break;  // <-- Sale del bucle infinito
             }
 
             // Procesamos los signos vitales a la velocidad correcta
             processVitalSigns(irValue, redValue);
 
             // Armamos el JSON individual de esta muestra
-            sendJSON.clear(); 
+            sendJSON.clear();
             sendJSON["status"] = "OK";
             sendJSON["IR_Data"] = irValue;
             sendJSON["RED_Data"] = redValue;
-            sendJSON["sample_number"] = samplesTaken + 1; 
+            sendJSON["sample_number"] = samplesTaken + 1;
             sendJSON["BPM_avg"] = bpmAvg;
             sendJSON["SpO2_avg"] = spo2Ready ? spo2Avg : 0.0;
-            
+
             serializeJson(sendJSON, Serial);
             Serial.println();
+            serializeJson(sendJSON, PagWeb);
+            PagWeb.println();
 
             samplesTaken++;
-            delay(5); // Retardo crítico para mantener los ~100Hz
-            
+            delay(5);  // Retardo crítico para mantener los ~100Hz
+
             // CANDADO OPCIONAL: Si quieres poder detenerlo enviando otro comando Serial
             if (Serial.available()) {
-               break; 
+              break;
             }
           }
 
           break;
         }
+
+      case 4:
+        {
+          ESP.restart();
+          break;
+        }
+
       default:
         {
           serialDebug("Invalid Function...");
