@@ -1,5 +1,5 @@
 /*
-Firmware de prueba ICM20948 - Seguridad de Buses Mejorada
+Firmware de prueba ICM20948 - Seguridad de Buses Mejorada y Timeouts
 */
 
 #include <DevLab_ICM20948.h>
@@ -103,8 +103,8 @@ void loop() {
           // Asegurar que SPI no esté secuestrando los pines
           releaseBuses();
           Wire.begin(MOSI_PIN, SCK_PIN);
-
-          bool isWhoAmIOk = false;  // Variable renombrada para evitar shadowing
+          Wire.setTimeOut(150);  // 150ms timeout
+          bool isWhoAmIOk = false;
 
           // ==== Inicialización del IMU I2C ====
           if (imu.beginI2C(ICM_ADDR, Wire, 400000)) {
@@ -119,19 +119,22 @@ void loop() {
               isWhoAmIOk = true;
             } else {
               sendJSON["whoIam"] = "FAIL";
+              releaseBuses();  
             }
 
             if (isWhoAmIOk) {
               if (!imu.setSensors(true, true, true)) {
                 sendJSON["sensor"] = "not ready";
-              }
-              if (!imu.initMag()) {
+                releaseBuses();  // LIMPIEZA: Falló configuración de sensores
+              } else if (!imu.initMag()) {
                 sendJSON["magnetometer"] = "not ready";
+                releaseBuses();  // LIMPIEZA: Falló configuración de magnetómetro
               }
             }
           } else {
             sendJSON["status"] = "FAIL";
             sendJSON["error"] = "Sensor could not be initialized via I2C";
+            releaseBuses();  // LIMPIEZA: El sensor no respondió al inicio
           }
 
           serializeJson(sendJSON, Serial);
@@ -147,12 +150,15 @@ void loop() {
           releaseBuses();
           SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN, CS_PIN);
 
+          // SPI no se "cuelga" como I2C, pero sí devuelve error si no hay conexión
           if (!imu.beginSPI(CS_PIN, SPI, 1000000)) {
             sendJSON["status"] = "FAIL";
             sendJSON["error"] = "beginSPI() failed";
+            releaseBuses();  // LIMPIEZA: Sensor no detectado por SPI
           } else if (!imu.setSensors(true, true, true)) {
             sendJSON["status"] = "FAIL";
             sendJSON["error"] = "setSensors() failed via SPI";
+            releaseBuses();  // LIMPIEZA: Falló configuración
           } else {
             sendJSON["status"] = "OK";
             sendJSON["Result"] = "OK";
