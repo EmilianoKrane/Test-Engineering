@@ -7,21 +7,7 @@
 
 void setup() {
   Serial.begin(115200);
-  delay(1000);
-
-  pinMode(PIN_CS, OUTPUT);
-  pinMode(PIN_SDO, OUTPUT);
-
-  digitalWrite(PIN_CS, HIGH);
-  digitalWrite(PIN_SDO, LOW);  // LOW = 0x68 || HIGH = 0x69
-
-  Wire.begin(SDA_PIN, SCL_PIN);
-  Serial.println("I2C scan starting...");
-
-
-
-  /*
-  digitalWrite(PIN_SDO, HIGH);  // LOW = 0x68 || HIGH = 0x69
+  delay(100);
 
   Wire.begin(SDA_PIN, SCL_PIN);
   Serial.println("I2C scan starting...");
@@ -34,9 +20,8 @@ void setup() {
       Serial.println(addr, HEX);
     }
   }
-  */
-
-  Serial.println("I2C scan done");
+  
+  Serial.println("I2C first scan done");
 }
 
 void loop() {

@@ -1,26 +1,25 @@
 /*
-Firmware de prueba ICM20948
-
-
+Firmware de prueba ICM20948 - Seguridad de Buses Mejorada
 */
 
 #include <DevLab_ICM20948.h>
 #include <Wire.h>
+#include <SPI.h>
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <HardwareSerial.h>
 
-/// ==== DECLARACIÓN DE PINES ====
-#define RUN_BUTTON 4  // >> Botonera de Arranque - Pin para botón de inicio físico
+// ==== DECLARACIÓN DE PINES ====
+#define RUN_BUTTON 4  // >> Botonera de Arranque
 #define CS_PIN 18     // Chip Select CS
-#define SCK_PIN 6     // SPI SCK SCL
-#define MOSI_PIN 7    // SPI MOSI SDA o SDI
-#define MISO_PIN 2    // SPI MISO ADO o SDO
+#define SCK_PIN 6     // SPI SCK  / I2C SCL
+#define MOSI_PIN 7    // SPI MOSI / I2C SDA
+#define MISO_PIN 2    // SPI MISO
 
 // ==== CREACIÓN DE OBJETOS ====
-DevLab_ICM20948 imu;                   // Objeto del sensor inercial
-StaticJsonDocument<1024> receiveJSON;  ///< Documento JSON para parsear datos recibidos
-StaticJsonDocument<1024> sendJSON;     ///< Documento JSON para armar respuestas
+DevLab_ICM20948 imu;
+StaticJsonDocument<1024> receiveJSON;
+StaticJsonDocument<1024> sendJSON;
 
 #define ICM_ADDR 0x69  // 0x68 (AD0=LOW) or 0x69 Default (AD0=HIGH)
 
@@ -32,49 +31,63 @@ void serialDebug(String str) {
   Serial.println();
 }
 
+// ==== CANDADO DE HARDWARE: APAGADO DE BUSES ====
+// Detiene los protocolos y pasa los pines a alta impedancia.
+// Previene cuelgues del bus y alimentación parásita al intercambiar placas.
+void releaseBuses() {
+  Wire.end();
+  SPI.end();
+
+  pinMode(SCK_PIN, INPUT);
+  pinMode(MOSI_PIN, INPUT);
+  pinMode(MISO_PIN, INPUT);
+  pinMode(CS_PIN, INPUT);
+}
 
 void setup() {
   Serial.begin(115200);
   delay(100);
   serialDebug("Serial Initialized...");
-
-  // ==== DECLARACIÓN DE GPIOS ====
   pinMode(RUN_BUTTON, INPUT_PULLUP);
 }
 
 void loop() {
-
   // ==== Manejo del botón de arranque ====
   if (digitalRead(RUN_BUTTON) == HIGH) {
-    sendJSON.clear();  // Limpia cualquier dato previo
-    delay(100);        // Debounce
+    sendJSON.clear();
+    delay(100);
 
     if (digitalRead(RUN_BUTTON) == LOW) {
       serialDebug("Arranque por botonera");
       delay(20);
-      sendJSON["Run"] = "OK";           // Envio de corriente JSON para corto
-      serializeJson(sendJSON, Serial);  // Envío de datos por JSON a la PagWeb
+      sendJSON["Run"] = "OK";
+      serializeJson(sendJSON, Serial);
       Serial.println();
+      while (digitalRead(RUN_BUTTON) == LOW)
+        ;  // Evitar disparos múltiples
     }
   }
 
   if (Serial.available()) {
-
     String inputJSON = Serial.readStringUntil('\n');
     DeserializationError error = deserializeJson(receiveJSON, inputJSON);
 
-    String Function = receiveJSON["Function"];
+    if (error) {
+      serialDebug("Invalid JSON syntax");
+      return;
+    }
 
+    String Function = receiveJSON["Function"];
 
     int opc = 0;
     if (Function == "ping") opc = 1;             // {"Function":"ping"}
     else if (Function == "whoIam") opc = 2;      // {"Function":"whoIam"}
     else if (Function == "initSPI") opc = 3;     // {"Function":"initSPI"}
     else if (Function == "readSensor") opc = 4;  // {"Function":"readSensor"}
-
+    else if (Function == "release") opc = 5;     // {"Function": "release"}
 
     switch (opc) {
-      case 1:
+      case 1:  // PING
         {
           sendJSON.clear();
           sendJSON["ping"] = "pong";
@@ -83,11 +96,15 @@ void loop() {
           break;
         }
 
-      case 2:
+      case 2:  // TEST I2C (whoIam)
         {
           sendJSON.clear();
+
+          // Asegurar que SPI no esté secuestrando los pines
+          releaseBuses();
           Wire.begin(MOSI_PIN, SCK_PIN);
-          bool whoIam = false;
+
+          bool isWhoAmIOk = false;  // Variable renombrada para evitar shadowing
 
           // ==== Inicialización del IMU I2C ====
           if (imu.beginI2C(ICM_ADDR, Wire, 400000)) {
@@ -96,14 +113,15 @@ void loop() {
             // ==== Identificador único ====
             uint8_t who;
             if (imu.readWhoAmI(who)) {
-              String whoIam = "0x" + String(who, HEX);
-              sendJSON["whoIam"] = whoIam;
-              whoIam = true;
+              String hexID = "0x" + String(who, HEX);
+              sendJSON["whoIam"] = hexID;
+              sendJSON["Result"] = "OK";
+              isWhoAmIOk = true;
             } else {
               sendJSON["whoIam"] = "FAIL";
             }
 
-            if (whoIam) {
+            if (isWhoAmIOk) {
               if (!imu.setSensors(true, true, true)) {
                 sendJSON["sensor"] = "not ready";
               }
@@ -112,8 +130,8 @@ void loop() {
               }
             }
           } else {
-            sendJSON["Result"] = "FAIL";
-            sendJSON["error"] = "the sensor could not be initialized...";
+            sendJSON["status"] = "FAIL";
+            sendJSON["error"] = "Sensor could not be initialized via I2C";
           }
 
           serializeJson(sendJSON, Serial);
@@ -121,65 +139,81 @@ void loop() {
           break;
         }
 
-      case 3:
+      case 3:  // INIT SPI
         {
           sendJSON.clear();
+
+          // Apagar I2C antes de iniciar SPI en los mismos pines
+          releaseBuses();
           SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN, CS_PIN);
+
           if (!imu.beginSPI(CS_PIN, SPI, 1000000)) {
-            Serial.println(F("ERROR: beginSPI() failed"));
+            sendJSON["status"] = "FAIL";
+            sendJSON["error"] = "beginSPI() failed";
+          } else if (!imu.setSensors(true, true, true)) {
+            sendJSON["status"] = "FAIL";
+            sendJSON["error"] = "setSensors() failed via SPI";
+          } else {
+            sendJSON["status"] = "OK";
+            sendJSON["Result"] = "OK";
+            sendJSON["msg"] = "SPI Initialized";
           }
 
-          if (!imu.setSensors(true, true, true)) {
-            Serial.println(F("ERROR: setSensors failed"));
-          }
-
+          serializeJson(sendJSON, Serial);
+          Serial.println();
           break;
         }
 
-      case 4:
+      case 4:  // READ SENSOR (SPI)
         {
-          sendJSON.clear();
-          float ax, ay, az;
-          float gx, gy, gz;
-          float tC;
+          for (int i = 0; i < 10; i++) {
+            sendJSON.clear();
+            float ax, ay, az, gx, gy, gz, tC;
+            bool readSuccess = true;
 
-          /** Read Accelerometer */
-          if (imu.readAccel(ax, ay, az)) {
-            Serial.print(F("ACC [g]: "));
-            Serial.print(ax, 3);
-            Serial.print(", ");
-            Serial.print(ay, 3);
-            Serial.print(", ");
-            Serial.println(az, 3);
-          } else {
-            Serial.println(F("ACC read failed"));
+            JsonObject acc = sendJSON.createNestedObject("ACC");
+            if (imu.readAccel(ax, ay, az)) {
+              acc["x"] = ax;
+              acc["y"] = ay;
+              acc["z"] = az;
+            } else {
+              readSuccess = false;
+            }
+
+            JsonObject gyr = sendJSON.createNestedObject("GYR");
+            if (imu.readGyro(gx, gy, gz)) {
+              gyr["x"] = gx;
+              gyr["y"] = gy;
+              gyr["z"] = gz;
+            } else {
+              readSuccess = false;
+            }
+
+            if (imu.readTemperature(tC)) {
+              sendJSON["TMP"] = tC;
+            } else {
+              readSuccess = false;
+            }
+
+            sendJSON["status"] = readSuccess ? "OK" : "READ_FAIL";
+
+            serializeJson(sendJSON, Serial);
+            Serial.println();
+            delay(500);
           }
-
-          /** Read Gyroscope */
-          if (imu.readGyro(gx, gy, gz)) {
-            Serial.print(F("GYR [dps]: "));
-            Serial.print(gx, 2);
-            Serial.print(", ");
-            Serial.print(gy, 2);
-            Serial.print(", ");
-            Serial.println(gz, 2);
-          } else {
-            Serial.println(F("GYR read failed"));
-          }
-
-          /** Read Temperature */
-          if (imu.readTemperature(tC)) {
-            Serial.print(F("TMP [C]: "));
-            Serial.println(tC, 2);
-          } else {
-            Serial.println(F("TMP read failed"));
-          }
-
-
-
           break;
         }
 
+      case 5:  // RELEASE BUSES (Cierre de prueba)
+        {
+          releaseBuses();
+          sendJSON.clear();
+          sendJSON["status"] = "RELEASED";
+          sendJSON["msg"] = "Buses in High-Z state. Safe to remove PCB.";
+          serializeJson(sendJSON, Serial);
+          Serial.println();
+          break;
+        }
 
       default:
         serialDebug("invalid option...");
@@ -187,56 +221,3 @@ void loop() {
     }
   }
 }
-
-
-
-
-
-/*
-
-  float ax, ay, az, gx, gy, gz, mx, my, mz, tC;
-
-  // Lecturas de Acelerómetro
-  if (imu.readAccel(ax, ay, az)) {
-    Serial.print(F("ACC (g): "));
-    Serial.print(ax);
-    Serial.print(", ");
-    Serial.print(ay);
-    Serial.print(", ");
-    Serial.println(az);
-  }
-
-  if (imu.readGyro(gx, gy, gz)) {
-    Serial.print(F("GYR (g): "));
-    Serial.print(gx);
-    Serial.print(", ");
-    Serial.print(gy);
-    Serial.print(", ");
-    Serial.println(gz);
-  }
-
-  if (imu.readTemperature(tC)) {
-    Serial.print("Temp: ");
-    Serial.println(tC);
-  }
-
-  // Lecturas de Magnetómetro
-  if (imu.readMag(mx, my, mz)) {
-    Serial.print(F("MAG (uT): "));
-    Serial.print(mx);
-    Serial.print(", ");
-    Serial.print(my);
-    Serial.print(", ");
-    Serial.println(mz);
-  }
-
-  uint8_t check;
-  if (!imu.readWhoAmI(check) || check != 0xEA) {
-    Serial.println("¡ALERTA! Comunicación perdida con el sensor. Revisa cableado.");
-  }
-
-  Serial.println("---");
-  delay(500);
-
-
-*/
