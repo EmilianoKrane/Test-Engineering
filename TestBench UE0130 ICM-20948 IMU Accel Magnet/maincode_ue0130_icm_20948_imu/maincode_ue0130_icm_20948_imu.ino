@@ -97,34 +97,29 @@ void loop() {
       case 2:  // TEST I2C (whoIam)
         {
           sendJSON.clear();
-
-          // Dirección a preguntar
           uint8_t Addr = 0x69;  // Declaramos el valor por defecto (105)
-
-          // Preguntamos si la clave "Addr" existe en el JSON
-          if (receiveJSON.containsKey("Addr")) {
-            // Extraemos el texto "0x68"
-            const char* addrStr = receiveJSON["Addr"];
-            // strtol convierte texto a número (usando base 16 para el hexadecimal)
-            Addr = (uint8_t)strtol(addrStr, NULL, 16);
-          }
-
-          if (Addr == 0x68) {
-            digitalWrite(MISO_PIN, LOW);
-            Serial.println("¡Éxito! Dirección: 0x68");
-          } else {
-            digitalWrite(MISO_PIN, HIGH);
-            Serial.print("Dirección incorrecta: 0x");
-            Serial.println(Addr, HEX);
-          }
+          bool isWhoAmIOk = false;
 
           // Asegurar que SPI no esté secuestrando los pines
           releaseBuses();
           Wire.begin(MOSI_PIN, SCK_PIN);
           Wire.setTimeOut(150);  // 150ms timeout
-          bool isWhoAmIOk = false;
+
+          // Preguntamos si la clave "Addr" existe en el JSON
+          if (receiveJSON.containsKey("Addr")) {
+            const char* addrStr = receiveJSON["Addr"];
+            Addr = (uint8_t)strtol(addrStr, NULL, 16);  // Conversión a hexadecimal
+          }
+
+          pinMode(MISO_PIN, OUTPUT);
+          if (Addr == 0x68) {
+            digitalWrite(MISO_PIN, LOW);
+          } else {
+            digitalWrite(MISO_PIN, HIGH);
+          }
 
           // ==== Inicialización del IMU I2C ====
+          delay(1000);
           if (imu.beginI2C(Addr, Wire, 400000)) {
             sendJSON["status"] = "initialized";
 
