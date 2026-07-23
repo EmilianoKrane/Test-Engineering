@@ -12,8 +12,8 @@ Firmware de prueba ICM20948 - Seguridad de Buses Mejorada y Timeouts
 // ==== DECLARACIÓN DE PINES ====
 #define RUN_BUTTON 6  // >> Botonera de Arranque
 #define CS_PIN 18     // Chip Select CS
-#define SCK_PIN 22     // SPI SCK  / I2C SCL
-#define MOSI_PIN 23    // SPI MOSI / I2C SDA
+#define SCK_PIN 22    // SPI SCK  / I2C SCL
+#define MOSI_PIN 23   // SPI MOSI / I2C SDA
 #define MISO_PIN 2    // SPI MISO SDO ADO
 
 // ==== CREACIÓN DE OBJETOS ====
@@ -49,6 +49,8 @@ void setup() {
   delay(100);
   serialDebug("Serial Initialized...");
   pinMode(RUN_BUTTON, INPUT_PULLUP);
+  pinMode(MISO_PIN, OUTPUT);
+  digitalWrite(MISO_PIN, LOW);
 }
 
 void loop() {
@@ -73,17 +75,17 @@ void loop() {
     }
 
     String Function = receiveJSON["Function"];
+    uint8_t Addr = receiveJSON["Addr"] | 0x69;
 
     int opc = 0;
     if (Function == "ping") opc = 1;             // {"Function":"ping"}
-    else if (Function == "whoIam") opc = 2;      // {"Function":"whoIam"}
+    else if (Function == "whoIam") opc = 2;      // {"Function":"whoIam","Addr":"0x69"}
     else if (Function == "initSPI") opc = 3;     // {"Function":"initSPI"}
     else if (Function == "readSensor") opc = 4;  // {"Function":"readSensor"}
-    else if (Function == "release") opc = 5;     // {"Function": "release"}
-
+    else if (Function == "release") opc = 5;     // {"Function":"release"}
 
     switch (opc) {
-      case 1:  // PING
+      case 1:
         {
           sendJSON.clear();
           sendJSON["ping"] = "pong";
@@ -96,6 +98,26 @@ void loop() {
         {
           sendJSON.clear();
 
+          // Dirección a preguntar
+          uint8_t Addr = 0x69;  // Declaramos el valor por defecto (105)
+
+          // Preguntamos si la clave "Addr" existe en el JSON
+          if (receiveJSON.containsKey("Addr")) {
+            // Extraemos el texto "0x68"
+            const char* addrStr = receiveJSON["Addr"];
+            // strtol convierte texto a número (usando base 16 para el hexadecimal)
+            Addr = (uint8_t)strtol(addrStr, NULL, 16);
+          }
+
+          if (Addr == 0x68) {
+            digitalWrite(MISO_PIN, LOW);
+            Serial.println("¡Éxito! Dirección: 0x68");
+          } else {
+            digitalWrite(MISO_PIN, HIGH);
+            Serial.print("Dirección incorrecta: 0x");
+            Serial.println(Addr, HEX);
+          }
+
           // Asegurar que SPI no esté secuestrando los pines
           releaseBuses();
           Wire.begin(MOSI_PIN, SCK_PIN);
@@ -103,7 +125,7 @@ void loop() {
           bool isWhoAmIOk = false;
 
           // ==== Inicialización del IMU I2C ====
-          if (imu.beginI2C(ICM_ADDR, Wire, 400000)) {
+          if (imu.beginI2C(Addr, Wire, 400000)) {
             sendJSON["status"] = "initialized";
 
             // ==== Identificador único ====
@@ -115,7 +137,7 @@ void loop() {
               isWhoAmIOk = true;
             } else {
               sendJSON["whoIam"] = "FAIL";
-              releaseBuses();  
+              releaseBuses();
             }
 
             if (isWhoAmIOk) {
