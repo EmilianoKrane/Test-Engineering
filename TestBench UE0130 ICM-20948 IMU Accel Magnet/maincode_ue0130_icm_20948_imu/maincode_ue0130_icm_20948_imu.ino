@@ -10,11 +10,11 @@ Firmware de prueba ICM20948 - Seguridad de Buses Mejorada y Timeouts
 #include <HardwareSerial.h>
 
 // ==== DECLARACIÓN DE PINES ====
-#define RUN_BUTTON 4  // >> Botonera de Arranque
+#define RUN_BUTTON 6  // >> Botonera de Arranque
 #define CS_PIN 18     // Chip Select CS
-#define SCK_PIN 6     // SPI SCK  / I2C SCL
-#define MOSI_PIN 7    // SPI MOSI / I2C SDA
-#define MISO_PIN 2    // SPI MISO
+#define SCK_PIN 22     // SPI SCK  / I2C SCL
+#define MOSI_PIN 23    // SPI MOSI / I2C SDA
+#define MISO_PIN 2    // SPI MISO SDO ADO
 
 // ==== CREACIÓN DE OBJETOS ====
 DevLab_ICM20948 imu;
@@ -172,7 +172,7 @@ void loop() {
 
       case 4:  // READ SENSOR (SPI)
         {
-          for (int i = 0; i < 10; i++) {
+          for (int i = 0; i < 40; i++) {
             sendJSON.clear();
             float ax, ay, az, gx, gy, gz, tC;
             bool readSuccess = true;
@@ -205,7 +205,7 @@ void loop() {
 
             serializeJson(sendJSON, Serial);
             Serial.println();
-            delay(500);
+            delay(100);
           }
           break;
         }

@@ -15,8 +15,8 @@
  * Estos pines están configurados para la comunicación I2C, UART y entrada de botón.
  */
 #define RUN_BUTTON 4  // >> Botonera de Arranque - Pin para botón de inicio físico
-#define SDA_PIN 6    // >> SDA para I2C con el esclavo - Línea de datos I2C
-#define SCL_PIN 7    // >> SCL para I2C con el esclavo - Línea de reloj I2C
+#define SDA_PIN 6     // >> SDA para I2C con el esclavo - Línea de datos I2C
+#define SCL_PIN 7     // >> SCL para I2C con el esclavo - Línea de reloj I2C
 
 
 // ==== CREACIÓN DE OBJETOS ====
@@ -98,6 +98,7 @@ void setup() {
 
   // ==== Inicialización de BUS I2C ====
   Wire.begin(SDA_PIN, SCL_PIN);  // Iniciar I2C como maestro
+  Wire.setTimeOut(30000);
   serialDebug("I2C inicializado en SDA: " + String(SDA_PIN) + " SCL: " + String(SCL_PIN));
 
   //I2CBus.begin(SDA_PIN, SCL_PIN);
@@ -106,7 +107,7 @@ void setup() {
   }
 
   // ==== Declaración de GPIOS ====
-  pinMode(RUN_BUTTON, INPUT);
+  pinMode(RUN_BUTTON, INPUT_PULLUP);
   delay(500);
 }
 
@@ -149,7 +150,7 @@ void loop() {
 
     int opc = 0;
     if (Function == "ping") opc = 1;                // {"Function": "ping"}
-    else if (Function == "scanAddr") opc = 2;       // {"Function": "scanAddr"}
+    else if (Function == "scanI2C") opc = 2;        // {"Function": "scanI2C"}
     else if (Function == "currentSensor") opc = 3;  // {"Function": "currentSensor"}
 
     switch (opc) {
@@ -180,11 +181,11 @@ void loop() {
       case 3:
         {
           sendJSON.clear();
-          float minCurrent = 0.4;
+          float minCurrent = 0.3;
           float maxCurrent = 0.6;
           delay(50);
-          corrienteSensor = current_in();
-          serialDebug("Current " + String(corrienteSensor) + " A");
+          corrienteSensor = abs(current_in());
+          //serialDebug("Current " + String(corrienteSensor) + " A");
           bool state = corrienteSensor > minCurrent && corrienteSensor < maxCurrent;
           if (state) sendJSON["Result"] = "OK";
           else sendJSON["Result"] = "FAIL";
