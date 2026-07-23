@@ -56,15 +56,10 @@ void loop() {
   if (digitalRead(RUN_BUTTON) == HIGH) {
     sendJSON.clear();
     delay(100);
-
     if (digitalRead(RUN_BUTTON) == LOW) {
-      serialDebug("Arranque por botonera");
-      delay(20);
       sendJSON["Run"] = "OK";
       serializeJson(sendJSON, Serial);
       Serial.println();
-      while (digitalRead(RUN_BUTTON) == LOW)
-        ;  // Evitar disparos múltiples
     }
   }
 
@@ -85,6 +80,7 @@ void loop() {
     else if (Function == "initSPI") opc = 3;     // {"Function":"initSPI"}
     else if (Function == "readSensor") opc = 4;  // {"Function":"readSensor"}
     else if (Function == "release") opc = 5;     // {"Function": "release"}
+
 
     switch (opc) {
       case 1:  // PING
