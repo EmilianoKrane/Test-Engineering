@@ -33,7 +33,6 @@ void serialDebug(String str) {
 
 // ==== CANDADO DE HARDWARE: APAGADO DE BUSES ====
 // Detiene los protocolos y pasa los pines a alta impedancia.
-// Previene cuelgues del bus y alimentación parásita al intercambiar placas.
 void releaseBuses() {
   Wire.end();
   SPI.end();
