@@ -10,6 +10,7 @@ void setup() {
   delay(100);
 
   Wire.begin(SDA_PIN, SCL_PIN);
+  Wire.setTimeout(5000);
   Serial.println("I2C scan starting...");
 
   for (uint8_t addr = 1; addr < 127; addr++) {
@@ -20,7 +21,7 @@ void setup() {
       Serial.println(addr, HEX);
     }
   }
-  
+
   Serial.println("I2C first scan done");
 }
 
