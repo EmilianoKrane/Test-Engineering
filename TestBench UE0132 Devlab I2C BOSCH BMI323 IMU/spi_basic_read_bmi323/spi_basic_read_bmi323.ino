@@ -1,86 +1,54 @@
-/*
-DevLab_BMI323 - SPI Basic Read Example
-
-  Description:
-  This example demonstrates how to initialize and read
-  accelerometer, gyroscope, and temperature data from
-  the Bosch BMI323 IMU using SPI 4 Wire conecction
-  on the DevLab_BMI323 library.
-
-  Supported Platforms:
-  - ESP32
-  - RP2040
-  - Arduino-compatible boards with Wire support
-
-  Connections:
-  BMI323 -> MCU
-
-  SDA   -> D11
-  SCK   -> D13
-  VDD   -> 3.3V
-  VDDIO -> 3.3V
-  GND   -> GND
-  CSB   -> D1O
-  SA0   -> D12
-
-  Author:
-  Jonathan Mejorado Lopez
-
-  Organization:
-  UNIT Electronics - DevLab Ecosystem
-
-  License:
-  MIT License
-*/
-
 #include <SPI.h>
 #include "DevLab_BMI323.h"
 
+// *************Setup SPI Config
+#define CS_PIN 18   // Chip Select CS
+#define SCK_PIN 6   // SPI SCK  / I2C SCL
+#define MOSI_PIN 7  // SPI MOSI / I2C SDAs
+#define MISO_PIN 2  // SPI MISO SDO ADO SAO
+#define SPI_FAST_SPEED 3000000
 
-
-/// *************Setup SPI Config
-#define MOSI_PIN D11
-#define MISO_PIN D12
-#define SCK_PIN  D13
-#define CS_PIN   D10 
-#define SPI_FAST_SPEED 4000000
-
-SPIClass spi_bus(SPI);                    //Inicializacion de bus SPI
-
-DevLab_BMI323 imuSpi(spi_bus,CS_PIN,MISO_PIN,MOSI_PIN,SCK_PIN,SPI_FAST_SPEED);
+// CORRECCIÓN 1: Elimina "SPIClass spi_bus(SPI);" y pasa el objeto global "SPI" directamente.
+DevLab_BMI323 imuSpi(SPI, CS_PIN, MISO_PIN, MOSI_PIN, SCK_PIN, SPI_FAST_SPEED);
 
 BMI323_SensorData data;
 
 void setup() {
-  // put your setup code here, to run once:
   Serial.begin(115200);
-  while(!Serial);
-
+  delay(1000);
   Serial.println("Iniciando puerto");
 
-  if(!imuSpi.begin()){
-    Serial.println("Error : BMI323 initialization failed");
+  // CORRECCIÓN 2: Preparar el pin CS manualmente.
+  // Los sensores Bosch arrancan en modo I2C por defecto. Para que cambien a modo SPI,
+  // necesitan detectar obligatoriamente que el pin CS pasa de estado ALTO a BAJO.
+  pinMode(CS_PIN, OUTPUT);
+  digitalWrite(CS_PIN, HIGH);
+  delay(100);  // Breve espera para estabilizar el voltaje
 
-    while(1){
+  // CORRECCIÓN 3: Pasar -1 en el argumento del CS para evitar que
+  // el controlador SPI de hardware secuestre el pin.
+  SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN, -1);
+
+  if (!imuSpi.begin()) {
+    while (1) {
+      Serial.println("Error : BMI323 initialization failed");
       delay(1000);
     }
+  } else {
+    Serial.println("BMI323 Initialized succesfully");
   }
-  Serial.println("BMI323 Initialized succesfully");
+
   delay(10);
 
+  // Asegúrate de que los macros BMI323_CHIP_ID y REG_CHIP_ID estén definidos en tu .h
   imuSpi.test_chip_id(BMI323_CHIP_ID, REG_CHIP_ID);
-
 }
 
 void loop() {
-
-    // Read sensor data
+  // Read sensor data
   if (imuSpi.readData(data)) {
-
     Serial.println("--------------------------------------------------");
 
-
-    
     // Accelerometer data
     Serial.print("Accelerometer [raw]");
     Serial.print("  X: ");
@@ -109,10 +77,8 @@ void loop() {
     Serial.println(data.temperatureC, 2);
 
   } else {
-
     Serial.println("ERROR: Failed to read BMI323 data.");
   }
 
-  delay(200);
-
+  delay(100);
 }

@@ -3,8 +3,8 @@
 // --------------------------------------------------
 // I2C pin configuration
 // --------------------------------------------------
-#define SDA_PIN 6
-#define SCL_PIN 7
+#define SDA_PIN 7
+#define SCL_PIN 6
 
 // --------------------------------------------------
 // Create BMI323 object
@@ -14,9 +14,6 @@ DevLab_BMI323 imu(Wire, 0x69);
 // Structure to store sensor data
 BMI323_SensorData data;
 
-// --------------------------------------------------
-// Arduino setup
-// --------------------------------------------------
 void setup() {
 
   Serial.begin(115200);
@@ -85,5 +82,5 @@ void loop() {
     Serial.println("ERROR: Failed to read BMI323 data.");
   }
 
-  delay(200);
+  delay(100);
 }

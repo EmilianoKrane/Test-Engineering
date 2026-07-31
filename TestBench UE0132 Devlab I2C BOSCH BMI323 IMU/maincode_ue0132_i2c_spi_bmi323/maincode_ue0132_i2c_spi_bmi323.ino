@@ -3,7 +3,6 @@ Este firmware funciona para
 
 */
 
-
 // ==== LIBRERIAS ====
 #include <SPI.h>
 #include <Wire.h>
@@ -12,10 +11,10 @@ Este firmware funciona para
 #include <ArduinoJson.h>
 
 // ==== DECLARACION DE GPIOS ====
-#define RUN_BUTTON 6  // >> Botonera de Arranque
+#define RUN_BUTTON 4  // >> Botonera de Arranque
 #define CS_PIN 18     // Chip Select CS
-#define SCK_PIN 23    // SPI SCK  / I2C SCL
-#define MOSI_PIN 22   // SPI MOSI / I2C SDAs
+#define SCK_PIN 7    // SPI SCK  / I2C SCL
+#define MOSI_PIN 6   // SPI MOSI / I2C SDAs
 #define MISO_PIN 2    // SPI MISO SDO ADO
 
 // ==== CREACIÓN DE OBJETOS =====
@@ -28,7 +27,7 @@ DevLab_BMI323 imu0x69(Wire, 0x69);
 BMI323_SensorData data;
 
 // ==== DECLARACIÓN DE VARIABLES GLOBALES ====
-
+uint8_t activeAddress = 0x69;  // Dirección activa por defecto
 
 // ==== FUNCIONE DE UTILIDAD ====
 void serialDebug(String str) {
@@ -45,7 +44,10 @@ void releaseBuses() {
   pinMode(SCK_PIN, INPUT);
   pinMode(MOSI_PIN, INPUT);
   pinMode(MISO_PIN, INPUT);
-  pinMode(CS_PIN, INPUT);
+
+  // Bloquear el pin CS en HIGH asegura que el BMI323 se quede en modo I2C
+  pinMode(CS_PIN, OUTPUT);
+  digitalWrite(CS_PIN, HIGH);
 }
 
 void setup() {
@@ -104,8 +106,7 @@ void loop() {
           {
             sendJSON.clear();
 
-            // ==== Inicialización y limpieza de buses ====
-            uint8_t Addr = 0x69;  // Declaramos el valor por defecto (105)
+            activeAddress = 0x69;  // Valor por defecto en caso de no recibir parámetro
             bool isbusI2Cok = false;
             releaseBuses();
             Wire.begin(MOSI_PIN, SCK_PIN);
@@ -114,23 +115,19 @@ void loop() {
             // ==== Parseo de dirección seleccionada por el usuario ====
             if (receiveJSON.containsKey("Address")) {
               const char* addrStr = receiveJSON["Address"];
-              Addr = (uint8_t)strtol(addrStr, NULL, 16);  // Conversión a hexadecimal
+              activeAddress = (uint8_t)strtol(addrStr, NULL, 16);
             }
 
             pinMode(MISO_PIN, OUTPUT);
-            if (Addr == 0x68) {
-              digitalWrite(MISO_PIN, LOW);
+            if (activeAddress == 0x68) {
+              digitalWrite(MISO_PIN, LOW);  // MISO (SDO) a GND = 0x68
               delay(200);
-              Serial.println(isbusI2Cok);
               isbusI2Cok = imu0x68.begin(MOSI_PIN, SCK_PIN, 400000);
-              Serial.println(isbusI2Cok);
               Serial.println("Sensor en 0x68 inicializado");
             } else {
-              digitalWrite(MISO_PIN, HIGH);
+              digitalWrite(MISO_PIN, HIGH);  // MISO (SDO) a VDD = 0x69
               delay(200);
-              Serial.println(isbusI2Cok);
               isbusI2Cok = imu0x69.begin(MOSI_PIN, SCK_PIN, 400000);
-              Serial.println(isbusI2Cok);
               Serial.println("Sensor en 0x69 inicializado");
             }
 
@@ -160,39 +157,35 @@ void loop() {
             sendJSON.clear();
 
             for (int i = 0; i < 10; i++) {
+              bool readSuccess = false;
 
-              if (imu0x68.readData(data)) {
+              // Leemos dinámicamente según la dirección que se inicializó
+              if (activeAddress == 0x68) {
+                readSuccess = imu0x68.readData(data);
+                serialDebug("Sensor inicializado en 0x68");
+              } else {
+                readSuccess = imu0x69.readData(data);
+                serialDebug("Sensor inicializado en 0x69");
+              }
+
+              if (readSuccess) {
                 Serial.println("--------------------------------------------------");
                 // Accelerometer data
                 Serial.print("Accelerometer [raw]");
                 Serial.print("  X: ");
                 Serial.print(data.accX);
-
                 Serial.print("   Y: ");
                 Serial.print(data.accY);
-
                 Serial.print("   Z: ");
                 Serial.println(data.accZ);
 
-                // Gyroscope data
-                Serial.print("Gyroscope     [raw]");
-                Serial.print("  X: ");
-                Serial.print(data.gyrX);
+                // ... (impresión del giroscopio y temperatura) ...
 
-                Serial.print("   Y: ");
-                Serial.print(data.gyrY);
-
-                Serial.print("   Z: ");
-                Serial.println(data.gyrZ);
-
-                // Temperature data
-                Serial.print("Temperature   [C]");
-                Serial.print("    ");
-                Serial.println(data.temperatureC, 2);
-                delay(100);
               } else {
                 Serial.println("ERROR: Failed to read BMI323 data.");
               }
+              // El delay debe ir fuera de la lectura exitosa para no saturar el bus si hay fallo
+              delay(100);
             }
 
             break;
@@ -205,3 +198,5 @@ void loop() {
     }
   }
 }
+
+

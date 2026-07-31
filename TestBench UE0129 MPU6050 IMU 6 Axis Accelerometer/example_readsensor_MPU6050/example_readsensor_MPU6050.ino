@@ -10,12 +10,10 @@
 
 Adafruit_MPU6050 mpu;
 
-
 void initMPU6050() {
 
   // Parámetros de configuración del sensor que mejor se adaptan al movimiento manual
   // -> Se pueden modificar según las necesidades del usuario
-
   mpu.setAccelerometerRange(MPU6050_RANGE_4_G);
   Serial.print("Accelerometer range set to: ");
   switch (mpu.getAccelerometerRange()) {
@@ -80,10 +78,10 @@ void initMPU6050() {
 
 void setup() {
   Serial.begin(115200);
-
   Serial.println("Serial Initialized!");
 
   Wire.begin(SDA_PIN, SCL_PIN);
+  Wire.setTimeout(50000);
   delay(100);
 
   for (uint8_t addr = 1; addr < 127; addr++) {
@@ -96,7 +94,7 @@ void setup() {
   }
 
   // Try to initialize!
-  if (!mpu.begin()) {
+  if (!mpu.begin(0x68)) {
     Serial.println("Failed to find MPU6050 chip");
     while (1) {
       delay(10);
