@@ -93,8 +93,7 @@ void loop() {
   matrix.clear();
   neopixels.clear();
 
-  /*
-
+ 
 
   for (int i = 0; i < NUMPIXELS / 2; i++) {
     pixels.setPixelColor(i, pixels.Color(0, intensity, 0));
@@ -107,7 +106,7 @@ void loop() {
     matrix.show();  
     smartDelay(DELAYVAL);
   }
-*/
+
 
   for (int i = 0; i < NUMPIXELS; i++) {
     neopixels.setPixelColor(i, neopixels.Color(0, intensity, 0));
@@ -115,7 +114,7 @@ void loop() {
     //smartDelay(DELAYVAL);
   }
 
-  /*
+
 
 
   for (int i = 0; i < NUMPIXELS / 2; i++) {
@@ -129,7 +128,7 @@ void loop() {
     matrix.show();
     smartDelay(DELAYVAL);
   }
-  */
+  
 
   for (int i = 0; i < NUMPIXELS; i++) {
     neopixels.setPixelColor(i, neopixels.Color(intensity, 0, 0));
@@ -137,7 +136,7 @@ void loop() {
     //smartDelay(DELAYVAL);
   }
 
-  /*
+
 
   for (int i = 0; i < NUMPIXELS / 2; i++) {
     pixels.setPixelColor(i, pixels.Color(0, 0, intensity));
@@ -150,7 +149,7 @@ void loop() {
     matrix.show();
     smartDelay(DELAYVAL);
   }
-  */
+ 
 
   for (int i = 0; i < NUMPIXELS; i++) {
     neopixels.setPixelColor(i, neopixels.Color(0, 0, intensity));
