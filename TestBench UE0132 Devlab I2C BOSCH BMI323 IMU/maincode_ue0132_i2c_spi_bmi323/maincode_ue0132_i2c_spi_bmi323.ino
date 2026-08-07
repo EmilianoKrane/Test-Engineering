@@ -257,10 +257,9 @@ void loop() {
               delay(100);
             }
 
-
-
             break;
           }
+
 
         default: serialDebug("error invalid option."); break;
       }
