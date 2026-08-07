@@ -1,6 +1,6 @@
 /**
-Este firmware funciona para 
-
+Este firmware funciona para la validación del módulo BMI323
+Integra prevención de bloqueos de bus y reportes estrictamente en JSON.
 */
 
 // ==== LIBRERIAS ====
@@ -31,8 +31,9 @@ BMI323_SensorData data;
 
 // ==== DECLARACIÓN DE VARIABLES GLOBALES ====
 uint8_t activeAddress = 0x69;  // Dirección activa por defecto
+int noValues = 15;             // Valor total de lecturas a realizar por protocolo
 
-// ==== FUNCIONE DE UTILIDAD ====
+// ==== FUNCIONES DE UTILIDAD ====
 void serialDebug(String str) {
   StaticJsonDocument<255> doc;
   doc["debug"] = str;
@@ -44,20 +45,25 @@ void releaseBuses() {
   Wire.end();
   SPI.end();
 
-  // 1. Bloquear el CS en HIGH DE INMEDIATO
+  // 1. Bloquear el CS en HIGH DE INMEDIATO para sacar al sensor de modo SPI
   pinMode(CS_PIN, OUTPUT);
   digitalWrite(CS_PIN, HIGH);
-  delay(10);  // Darle tiempo al sensor a salir del modo SPI
+  delay(10);
 
-  // 2. Liberar el resto de los pines
+  // 2. Liberar el resto de los pines a un estado de alta impedancia
   pinMode(SCK_PIN, INPUT);
   pinMode(MOSI_PIN, INPUT);
   pinMode(MISO_PIN, INPUT);
 }
+
 void setup() {
   Serial.begin(115200);
   delay(100);
-  serialDebug("Test BMI323 DevLab Module Initialized...");
+
+  sendJSON["System"] = "Ready";
+  sendJSON["Module"] = "BMI323 DevLab";
+  serializeJson(sendJSON, Serial);
+  Serial.println();
 
   // ==== Declaración de Pines ====
   pinMode(RUN_BUTTON, INPUT_PULLUP);
@@ -67,13 +73,12 @@ void loop() {
 
   // ==== Manejo del botón de arranque ====
   if (digitalRead(RUN_BUTTON) == HIGH) {
-    sendJSON.clear();  // Limpia cualquier dato previo
-    delay(100);        // Debounce
+    sendJSON.clear();
+    delay(100);
 
     if (digitalRead(RUN_BUTTON) == LOW) {
-      serialDebug("Arranque por botonera");
-      sendJSON["Run"] = "OK";           // Envio de corriente JSON para corto
-      serializeJson(sendJSON, Serial);  // Envío de datos por JSON a la PagWeb
+      sendJSON["Run"] = "OK";
+      serializeJson(sendJSON, Serial);
       Serial.println();
     }
   }
@@ -84,39 +89,46 @@ void loop() {
     DeserializationError error = deserializeJson(receiveJSON, inJson);
 
     if (error) {
-      serialDebug(String("error JSON: ") + error.c_str());
+      sendJSON.clear();
+      sendJSON["status"] = "FAIL";
+      sendJSON["error"] = String("Invalid JSON: ") + error.c_str();
+      serializeJson(sendJSON, Serial);
+      Serial.println();
     } else {
 
       String Function = receiveJSON["Function"];
       String Address = receiveJSON["Address"] | "0x69";
 
       int opc = 0;
-      if (Function == "ping") opc = 1;             // {"Function":"ping"}
-      else if (Function == "initI2C") opc = 2;     // {"Function":"initI2C", "Address":"0x68"}
-      else if (Function == "initSPI") opc = 3;     // {"Function":"initSPI"}
-      else if (Function == "readSensor") opc = 4;  // {"Function":"readSensor"}
-      else if (Function == "readSPI") opc = 5;     // {"Function":"readSPI"}
+      if (Function == "ping") opc = 1;           // {"Function":"ping"}
+      else if (Function == "init_i2c") opc = 2;  // {"Function":"init_i2c", "Address":"0x68"}
+      else if (Function == "init_spi") opc = 3;  // {"Function":"init_spi"}
+      else if (Function == "read_i2c") opc = 4;  // {"Function":"read_i2c"}
+      else if (Function == "read_spi") opc = 5;  // {"Function":"read_spi"}
 
       switch (opc) {
         case 1:
           {
+            sendJSON.clear();
             sendJSON["ping"] = "pong";
             serializeJson(sendJSON, Serial);
             Serial.println();
             break;
           }
 
-        case 2:
+        case 2:  // Inicialización I2C
           {
             sendJSON.clear();
-
-            activeAddress = 0x69;  // Valor por defecto en caso de no recibir parámetro
+            activeAddress = 0x69;
             bool isbusI2Cok = false;
-            //releaseBuses();
-            // Wire.begin(MOSI_PIN, SCK_PIN);
-            // Wire.setTimeOut(1000);  // 150ms timeout
 
-            // ==== Parseo de dirección seleccionada por el usuario ====
+            releaseBuses();  // Limpia hardware cruzado
+
+            // Protección vital contra bloqueos del bus I2C
+            Wire.begin(MOSI_PIN, SCK_PIN);
+            Wire.setTimeOut(150);
+
+            // Parseo de dirección
             if (receiveJSON.containsKey("Address")) {
               const char* addrStr = receiveJSON["Address"];
               activeAddress = (uint8_t)strtol(addrStr, NULL, 16);
@@ -127,20 +139,19 @@ void loop() {
               digitalWrite(MISO_PIN, LOW);  // MISO (SDO) a GND = 0x68
               delay(200);
               isbusI2Cok = imu0x68.begin(MOSI_PIN, SCK_PIN, 400000);
-              Serial.println("Sensor en 0x68 inicializado");
             } else {
               digitalWrite(MISO_PIN, HIGH);  // MISO (SDO) a VDD = 0x69
               delay(200);
               isbusI2Cok = imu0x69.begin(MOSI_PIN, SCK_PIN, 400000);
-              Serial.println("Sensor en 0x69 inicializado");
             }
 
             if (!isbusI2Cok) {
               sendJSON["status"] = "FAIL";
-              sendJSON["error"] = "BMI323 initialization failed.";
+              sendJSON["error"] = "BMI323 I2C initialization failed.";
             } else {
-              sendJSON["Result"] = "OK";
-              sendJSON["status"] = "initialized";
+              sendJSON["status"] = "OK";
+              sendJSON["message"] = "I2C Initialized";
+              sendJSON["address"] = (activeAddress == 0x68) ? "0x68" : "0x69";
             }
 
             serializeJson(sendJSON, Serial);
@@ -148,120 +159,99 @@ void loop() {
             break;
           }
 
-        case 3:
+        case 3:  // Inicialización SPI
           {
             sendJSON.clear();
-            serialDebug("Test SPI Initialized...");
+            releaseBuses();  // Aseguramos que los pines no tengan estados residuales del I2C
+
             SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN, -1);
             if (!imuSpi.begin()) {
-              Serial.println("Error : BMI323 initialization failed");
-              break;
+              sendJSON["status"] = "FAIL";
+              sendJSON["error"] = "BMI323 SPI initialization failed.";
+            } else {
+              sendJSON["status"] = "OK";
+              sendJSON["message"] = "SPI Initialized";
+
+              // Opcional: test_chip_id imprime directo a Serial en tu librería,
+              // puedes comentarlo si requieres 100% limpieza JSON.
+              // imuSpi.test_chip_id(BMI323_CHIP_ID, REG_CHIP_ID);
             }
 
-            Serial.println("BMI323 Initialized succesfully");
-            imuSpi.test_chip_id(BMI323_CHIP_ID, REG_CHIP_ID);
-
+            serializeJson(sendJSON, Serial);
+            Serial.println();
             break;
           }
 
-        case 4:
+        case 4:  // Lectura I2C
           {
-            sendJSON.clear();
-
-            for (int i = 0; i < 10; i++) {
+            for (int i = 0; i < noValues; i++) {
+              sendJSON.clear();
               bool readSuccess = false;
 
-              // Leemos dinámicamente según la dirección que se inicializó
               if (activeAddress == 0x68) {
                 readSuccess = imu0x68.readData(data);
-                //serialDebug("Sensor inicializado en 0x68");
               } else if (activeAddress == 0x69) {
                 readSuccess = imu0x69.readData(data);
-                //serialDebug("Sensor inicializado en 0x69");
               }
 
               if (readSuccess) {
-                Serial.println("--------------------------------------------------");
-                // Accelerometer data
-                Serial.print("Accelerometer [raw]");
-                Serial.print("  X: ");
-                Serial.print(data.accX);
-                Serial.print("   Y: ");
-                Serial.print(data.accY);
-                Serial.print("   Z: ");
-                Serial.println(data.accZ);
-
-
-                // Gyroscope data
-                Serial.print("Gyroscope     [raw]");
-                Serial.print("  X: ");
-                Serial.print(data.gyrX);
-                Serial.print("   Y: ");
-                Serial.print(data.gyrY);
-                Serial.print("   Z: ");
-                Serial.println(data.gyrZ);
-
-                // Temperature data
-                Serial.print("Temperature   [C]");
-                Serial.print("    ");
-                Serial.println(data.temperatureC, 2);
-
+                sendJSON["status"] = "OK";
+                sendJSON["protocol"] = "I2C";
+                sendJSON["accX"] = data.accX;
+                sendJSON["accY"] = data.accY;
+                sendJSON["accZ"] = data.accZ;
+                sendJSON["gyrX"] = data.gyrX;
+                sendJSON["gyrY"] = data.gyrY;
+                sendJSON["gyrZ"] = data.gyrZ;
+                sendJSON["tempC"] = data.temperatureC;
               } else {
-                Serial.println("ERROR: Failed to read BMI323 data.");
+                sendJSON["status"] = "FAIL";
+                sendJSON["error"] = "I2C Read timeout/failure";
               }
-              // El delay debe ir fuera de la lectura exitosa para no saturar el bus si hay fallo
+
+              serializeJson(sendJSON, Serial);
+              Serial.println();
               delay(100);
             }
-
             break;
           }
 
-        case 5:
+        case 5:  // Lectura SPI
+          {
+            for (int i = 0; i < noValues; i++) {
+              sendJSON.clear();
+
+              if (imuSpi.readData(data)) {
+                sendJSON["status"] = "OK";
+                sendJSON["protocol"] = "SPI";
+                sendJSON["accX"] = data.accX;
+                sendJSON["accY"] = data.accY;
+                sendJSON["accZ"] = data.accZ;
+                sendJSON["gyrX"] = data.gyrX;
+                sendJSON["gyrY"] = data.gyrY;
+                sendJSON["gyrZ"] = data.gyrZ;
+                sendJSON["tempC"] = data.temperatureC;
+              } else {
+                sendJSON["status"] = "FAIL";
+                sendJSON["error"] = "SPI Read failure";
+              }
+
+              serializeJson(sendJSON, Serial);
+              Serial.println();
+              delay(100);
+            }
+            break;
+          }
+
+        default:
           {
             sendJSON.clear();
-            for (int i = 0; i < 15; i++) {
-              if (imuSpi.readData(data)) {
-                Serial.println("--------------------------------------------------");
-
-                // Accelerometer data
-                Serial.print("Accelerometer [raw]");
-                Serial.print("  X: ");
-                Serial.print(data.accX);
-
-                Serial.print("   Y: ");
-                Serial.print(data.accY);
-
-                Serial.print("   Z: ");
-                Serial.println(data.accZ);
-
-                // Gyroscope data
-                Serial.print("Gyroscope     [raw]");
-                Serial.print("  X: ");
-                Serial.print(data.gyrX);
-
-                Serial.print("   Y: ");
-                Serial.print(data.gyrY);
-
-                Serial.print("   Z: ");
-                Serial.println(data.gyrZ);
-
-                // Temperature data
-                Serial.print("Temperature   [C]");
-                Serial.print("    ");
-                Serial.println(data.temperatureC, 2);
-
-              } else {
-                Serial.println("ERROR: Failed to read BMI323 data.");
-              }
-
-              delay(100);
-            }
-
+            sendJSON["status"] = "FAIL";
+            sendJSON["error"] = "Invalid function requested";
+            serializeJson(sendJSON, Serial);
+            Serial.println();
             break;
           }
-
-
-        default: serialDebug("error invalid option."); break;
       }
     }
   }
