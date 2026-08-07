@@ -1,6 +1,8 @@
 /**
 Este firmware funciona para la validación del módulo BMI323
 Integra prevención de bloqueos de bus y reportes estrictamente en JSON.
+
+** Se realizó una modificación en la funcion de inicialización de begin para i2c 
 */
 
 // ==== LIBRERIAS ====
