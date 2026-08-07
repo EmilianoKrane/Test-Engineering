@@ -2,8 +2,8 @@
 #include <Adafruit_NeoMatrix.h>
 #include <Adafruit_NeoPixel.h>
 
-#define PIN1 22  // Matriz Izquierda
-#define PIN2 21  // Matriz Derecha
+#define PIN1 6  // Matriz Izquierda
+#define PIN2 7  // Matriz Derecha
 
 Adafruit_NeoMatrix matriz1 = Adafruit_NeoMatrix(16, 8, PIN1,
   NEO_MATRIX_TOP + NEO_MATRIX_RIGHT + NEO_MATRIX_COLUMNS + NEO_MATRIX_ZIGZAG,

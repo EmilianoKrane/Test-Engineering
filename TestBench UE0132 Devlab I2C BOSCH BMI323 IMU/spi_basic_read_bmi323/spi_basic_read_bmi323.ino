@@ -6,7 +6,7 @@
 #define SCK_PIN 6   // SPI SCK  / I2C SCL
 #define MOSI_PIN 7  // SPI MOSI / I2C SDAs
 #define MISO_PIN 2  // SPI MISO SDO ADO SAO
-#define SPI_FAST_SPEED 3000000
+#define SPI_FAST_SPEED 10000000
 
 // CORRECCIÓN 1: Elimina "SPIClass spi_bus(SPI);" y pasa el objeto global "SPI" directamente.
 DevLab_BMI323 imuSpi(SPI, CS_PIN, MISO_PIN, MOSI_PIN, SCK_PIN, SPI_FAST_SPEED);
@@ -21,9 +21,6 @@ void setup() {
   // CORRECCIÓN 2: Preparar el pin CS manualmente.
   // Los sensores Bosch arrancan en modo I2C por defecto. Para que cambien a modo SPI,
   // necesitan detectar obligatoriamente que el pin CS pasa de estado ALTO a BAJO.
-  pinMode(CS_PIN, OUTPUT);
-  digitalWrite(CS_PIN, HIGH);
-  delay(100);  // Breve espera para estabilizar el voltaje
 
   // CORRECCIÓN 3: Pasar -1 en el argumento del CS para evitar que
   // el controlador SPI de hardware secuestre el pin.
@@ -38,7 +35,7 @@ void setup() {
     Serial.println("BMI323 Initialized succesfully");
   }
 
-  delay(10);
+  delay(100);
 
   // Asegúrate de que los macros BMI323_CHIP_ID y REG_CHIP_ID estén definidos en tu .h
   imuSpi.test_chip_id(BMI323_CHIP_ID, REG_CHIP_ID);

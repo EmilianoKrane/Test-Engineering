@@ -3,8 +3,8 @@
 // --------------------------------------------------
 // I2C pin configuration
 // --------------------------------------------------
-#define SDA_PIN 7
-#define SCL_PIN 6
+#define SDA_PIN 6
+#define SCL_PIN 7
 
 // --------------------------------------------------
 // Create BMI323 object
@@ -79,8 +79,8 @@ void loop() {
 
   } else {
 
-    Serial.println("ERROR: Failed to read BMI323 data.");
+    Serial.println("ERROR: Failed to read BMI323 data i2c.");
   }
 
-  delay(100);
+  delay(1000);
 }

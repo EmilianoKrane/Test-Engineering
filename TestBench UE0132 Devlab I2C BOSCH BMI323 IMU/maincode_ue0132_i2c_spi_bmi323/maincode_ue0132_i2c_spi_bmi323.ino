@@ -11,11 +11,11 @@ Este firmware funciona para
 #include <ArduinoJson.h>
 
 // ==== DECLARACION DE GPIOS ====
-#define RUN_BUTTON 4  // >> Botonera de Arranque
-#define CS_PIN 18     // Chip Select CS
-#define SCK_PIN 7    // SPI SCK  / I2C SCL
-#define MOSI_PIN 6   // SPI MOSI / I2C SDAs
-#define MISO_PIN 2    // SPI MISO SDO ADO
+#define CS_PIN 18   // Chip Select CS
+#define SCK_PIN 6   // SPI SCK  / I2C SCL
+#define MOSI_PIN 7  // SPI MOSI / I2C SDAs
+#define MISO_PIN 2  // SPI MISO SDO ADO SAO
+#define SPI_FAST_SPEED 10000000
 
 // ==== CREACIÓN DE OBJETOS =====
 StaticJsonDocument<1024> receiveJSON;
