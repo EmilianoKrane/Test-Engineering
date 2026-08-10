@@ -124,11 +124,11 @@ void loop() {
             activeAddress = 0x69;
             bool isbusI2Cok = false;
 
-            releaseBuses();  // Limpia hardware cruzado
+            // releaseBuses();  // Limpia hardware cruzado
 
             // Protección vital contra bloqueos del bus I2C
-            Wire.begin(MOSI_PIN, SCK_PIN);
-            Wire.setTimeOut(150);
+            // Wire.begin(MOSI_PIN, SCK_PIN);
+            // Wire.setTimeOut(150);
 
             // Parseo de dirección
             if (receiveJSON.containsKey("Address")) {
