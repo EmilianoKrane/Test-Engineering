@@ -5,7 +5,7 @@
 #include <utility/imumaths.h>
 
 // BNO055: orientación y movimiento
-Adafruit_BNO055 bno(55, 0x29, &Wire);
+Adafruit_BNO055 bno(55, 0x28, &Wire);
 
 // BMP280: temperatura y presión
 Adafruit_BMP280 bmp;
