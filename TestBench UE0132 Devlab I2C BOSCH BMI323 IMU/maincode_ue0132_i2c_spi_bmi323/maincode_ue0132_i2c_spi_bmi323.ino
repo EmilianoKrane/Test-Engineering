@@ -33,7 +33,7 @@ BMI323_SensorData data;
 
 // ==== DECLARACIÓN DE VARIABLES GLOBALES ====
 uint8_t activeAddress = 0x69;  // Dirección activa por defecto
-int noValues = 15;             // Valor total de lecturas a realizar por protocolo
+int noValues = 20;             // Valor total de lecturas a realizar por protocolo
 
 // ==== FUNCIONES DE UTILIDAD ====
 void serialDebug(String str) {
@@ -151,6 +151,7 @@ void loop() {
               sendJSON["status"] = "FAIL";
               sendJSON["error"] = "BMI323 I2C initialization failed.";
             } else {
+              sendJSON["Result"] = "OK";
               sendJSON["status"] = "OK";
               sendJSON["message"] = "I2C Initialized";
               sendJSON["address"] = (activeAddress == 0x68) ? "0x68" : "0x69";
@@ -171,6 +172,7 @@ void loop() {
               sendJSON["status"] = "FAIL";
               sendJSON["error"] = "BMI323 SPI initialization failed.";
             } else {
+              sendJSON["Result"] = "OK";
               sendJSON["status"] = "OK";
               sendJSON["message"] = "SPI Initialized";
 
