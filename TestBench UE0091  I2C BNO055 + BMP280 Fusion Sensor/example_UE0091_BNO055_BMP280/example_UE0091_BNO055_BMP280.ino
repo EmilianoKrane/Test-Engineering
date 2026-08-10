@@ -49,7 +49,9 @@ void setup() {
   Serial.println();
 
   Wire.begin(SDA_PIN, SCL_PIN);
-  Wire.setClock(50000);
+
+  // For higher and more stable speed, use the TLC4311. 400kHz
+  Wire.setClock(400000);  // typical speed 100kHz
   delay(100);
 
   // Escaneo de Direcciones I2C
@@ -70,7 +72,7 @@ void setup() {
   } else {
     sendJSON["status_bno"] = "sensor initialized";
   }
-  delay(500);  // Estabilizar BNO055
+  delay(1500);  // Estabilizar BNO055
 
   // Inicializar BMP280 en dirección 0x76
   if (!bmp.begin(0x76)) {
