@@ -59,30 +59,13 @@ void setup() {
   // ---- Inicializaciones ----
   Serial.begin(115200);
   delay(100);
-  sendJSON["System"] = "Ready";
-  sendJSON["Module"] = "PulsarC6";
 
-  Wire.begin(SDA_PIN, SCL_PIN);
   WiFi.mode(WIFI_MODE_STA);
 
-  // ---- Inicialización y lectura de estado I2C OLED ----
-  if (!i2cCheckDevice(0x3C)) {
-    sendJSON["i2c_oled"] = "fail";
-    status_OLED = false;
-  } else {
-    sendJSON["i2c_oled"] = "ok";
-    status_OLED = true;
+  // ---- rutina de chequeo de bloques de comunicación ----
+  checkPulsar();  // Revisión de bloque i2c y spi
 
-    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-    display.clearDisplay();
-    display.setTextSize(1.5);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(22, 0);
-    display.println(F("Pulsar C6 Test"));
-    display.setCursor(35, 10);
-    display.println(F("¡Ready!"));
-    display.display();
-  }
+
 
   // ---- Configuración de GPIOS Entrada/Salida ----
   pinMode(SDA_PIN, OUTPUT);
@@ -90,10 +73,6 @@ void setup() {
   // ---- Configuración del Neopixel ----
   pixels.clear();
   pixels.setBrightness(150);
-
-  // ---- Serialización de JSON ----
-  serializeJson(sendJSON, Serial);
-  Serial.println();
 }
 
 void loop() {
@@ -279,10 +258,48 @@ void loop() {
 
 void checkPulsar() {
   sendJSON.clear();
+  sendJSON["System"] = "Ready";
+  sendJSON["Module"] = "PulsarC6";
 
   // ---- i2c block check ----
   Wire.begin(SDA_PIN, SCL_PIN);
+  if (!i2cCheckDevice(0x3C)) {
+    sendJSON["i2c_bus"] = false;
+  } else {
+    sendJSON["i2c_bus"] = true;
 
+    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+    display.clearDisplay();
+    display.setTextSize(1.5);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(22, 0);
+    display.println(F("I2C Bus OK"));
+    display.display();
+  }
+
+  Wire.end();
+  pinMode(SDA_PIN, INPUT);
+  pinMode(SCL_PIN, INPUT);
+  delay(100);
+
+  // ---- spi block check with sd ----
+  SPI.begin(SDA_PIN, D12_PIN, SCL_PIN, D5_PIN);
+  if (SD.begin(D5_PIN)) {
+    sendJSON["init_sd"] = true;
+    uint8_t cardType = SD.cardType();
+    uint64_t cardSize = SD.cardSize() / (1024 * 1024);
+    if (cardType == CARD_NONE) sendJSON["sd_att"] = "No SD card attached";
+    if (cardType == CARD_MMC) sendJSON["sd_type"] = "MMC";
+    if (cardType == CARD_SD) sendJSON["sd_type"] = "SDSC";
+    if (cardType == CARD_SDHC) sendJSON["sd_type"] = "SDHC";
+    sendJSON["sd_size"] = cardSize;
+    sendJSON["spi_bus"] = true;
+  } else sendJSON["spi_bus"] = false;
+
+
+  // ---- mac id check and register ----
+  String mac = WiFi.macAddress();
+  sendJSON["mac"] = mac;
 
   serializeJson(sendJSON, Serial);
   Serial.println();
