@@ -15,7 +15,7 @@ Adafruit_NeoPixel pixels(NUMPIXELS, PIN1, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel matrix(NUMPIXELS, PIN2, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel neopixels(NUMPIXELS, PIN3, NEO_GRB + NEO_KHZ800);
 
-#define DELAYVAL 1  // Time (in milliseconds) to pause between pixels
+#define DELAYVAL 100  // Time (in milliseconds) to pause between pixels
 
 // Variables de intensidad
 int intensity = 5;         // 50=Bajo, 150=Medio, 255=Alto
@@ -93,17 +93,17 @@ void loop() {
   matrix.clear();
   neopixels.clear();
 
- 
+
 
   for (int i = 0; i < NUMPIXELS / 2; i++) {
     pixels.setPixelColor(i, pixels.Color(0, intensity, 0));
-    pixels.show();    
-    smartDelay(DELAYVAL); // <-- Usamos nuestro delay inteligente
+    pixels.show();
+    smartDelay(DELAYVAL);  // <-- Usamos nuestro delay inteligente
   }
 
   for (int i = 0; i < NUMPIXELS / 2; i++) {
     matrix.setPixelColor(i, matrix.Color(0, intensity, 0));
-    matrix.show();  
+    matrix.show();
     smartDelay(DELAYVAL);
   }
 
@@ -128,15 +128,12 @@ void loop() {
     matrix.show();
     smartDelay(DELAYVAL);
   }
-  
 
   for (int i = 0; i < NUMPIXELS; i++) {
     neopixels.setPixelColor(i, neopixels.Color(intensity, 0, 0));
     neopixels.show();
     //smartDelay(DELAYVAL);
   }
-
-
 
   for (int i = 0; i < NUMPIXELS / 2; i++) {
     pixels.setPixelColor(i, pixels.Color(0, 0, intensity));
@@ -149,7 +146,7 @@ void loop() {
     matrix.show();
     smartDelay(DELAYVAL);
   }
- 
+
 
   for (int i = 0; i < NUMPIXELS; i++) {
     neopixels.setPixelColor(i, neopixels.Color(0, 0, intensity));
