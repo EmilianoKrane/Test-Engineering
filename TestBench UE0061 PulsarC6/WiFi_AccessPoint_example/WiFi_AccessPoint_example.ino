@@ -2,8 +2,8 @@
 #include <WebServer.h>
 #include <ArduinoJson.h>
 
-const char *ssid = "ESP32-Master-Red";
-const char *password = "123456789";
+const char *ssid = "IngPruebas-Master";
+const char *password = "cachirula&lojansito";
 
 // Iniciamos el servidor en el puerto 80
 WebServer server(80);
@@ -43,7 +43,7 @@ void handlePing() {
 
 void setup() {
   Serial.begin(115200);
-  
+
   // Configurar e iniciar el Punto de Acceso
   WiFi.softAP(ssid, password);
   Serial.print("Master AP IP: ");
@@ -52,7 +52,7 @@ void setup() {
   // Indicar al servidor qué función ejecutar cuando reciba un POST en "/ping"
   server.on("/ping", HTTP_POST, handlePing);
   server.begin();
-  
+
   Serial.println("Servidor HTTP iniciado. Esperando pings...");
 }
 
