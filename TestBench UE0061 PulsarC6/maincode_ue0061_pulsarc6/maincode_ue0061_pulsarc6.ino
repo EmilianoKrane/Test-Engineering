@@ -6,6 +6,7 @@ ue0061 firmware test main pulsar c6
 // ==== BIBLIOTECAS ====
 #include <Wire.h>
 #include <WiFi.h>
+#include <HTTPClient.h>
 #include <HardwareSerial.h>
 #include <ArduinoJson.h>
 #include <Adafruit_NeoPixel.h>
@@ -40,15 +41,20 @@ ue0061 firmware test main pulsar c6
 
 
 // ==== DECLARACIÓN DE VARIABLES GLOBALES y MACROS ====
-#define NUMPIXELS 26
+#define NUMPIXELS 26  // Número de Neopixeles en matrix
+int intensity = 50;   // Intensidad de brillo en Neopixel
+
 #define OLED_RESET -1      // Reset pin # (or -1 if sharing Arduino reset pin)
 #define SCREEN_WIDTH 128   // OLED display width, in pixels
 #define SCREEN_HEIGHT 64   // OLED display height, in pixels
-String JSON_entrada;       // Variable que recibe JSON del frontend
-String JSON_salida;        // Variable que envía el JSON de datos
 bool status_OLED = false;  // Variable check de inicialización OLED por I2Cs
-int intensity = 50;
 
+String JSON_entrada;  // Variable que recibe JSON del frontend
+String JSON_salida;   // Variable que envía el JSON de datos
+
+const char *ssid = "IngPruebas-Master";
+const char *password = "cachirula";
+const char *serverUrl = "http://192.168.4.1/ping";
 
 // ==== CREACIÓN DE OBJETOS ====
 StaticJsonDocument<200> receiveJSON;
@@ -60,8 +66,6 @@ void setup() {
   // ---- Inicializaciones ----
   Serial.begin(115200);
   delay(100);
-
-  WiFi.mode(WIFI_MODE_STA);
 
   // ---- rutina de chequeo de bloques de comunicación ----
   checkPulsar();  // Revisión de bloque i2c y spi
@@ -299,9 +303,67 @@ void checkPulsar() {
 
 
   // ---- mac id check and register ----
+  WiFi.mode(WIFI_MODE_STA);
   String mac = WiFi.macAddress();
   sendJSON["mac"] = mac;
 
+  // ---- WiFi check connection ----
+  WiFi.begin(ssid, password);
+  Serial.print("Conectando");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\n¡Conectado a la red de Pruebas!");
+
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    http.begin(serverUrl);
+
+    // Especificar que el contenido que enviamos es un JSON
+    http.addHeader("Content-Type", "application/json");
+
+    // 1. Crear el JSON de envío (Ping)
+    JsonDocument docReq;
+    docReq["device"] = "PulsarC6";
+    docReq["message"] = "ping to validate connection";
+
+    String jsonRequest;
+    serializeJson(docReq, jsonRequest);
+    Serial.println("\nSending: " + jsonRequest);
+
+    // 2. Enviar la petición POST y guardar el código de respuesta HTTP
+    int httpResponseCode = http.POST(jsonRequest);
+
+    // 3. Procesar la respuesta del Master
+    if (httpResponseCode > 0) {
+      String payload = http.getString();  // Extraer el JSON del Master
+
+      JsonDocument docRes;
+      DeserializationError error = deserializeJson(docRes, payload);
+
+      if (!error) {
+        String respuestaMaster = docRes["key"];
+
+        if (respuestaMaster == "pong") {
+          sendJSON["WiFi_status"] = true;
+          sendJSON["WiFi_code"] = httpResponseCode;
+          sendJSON["WiFi_message"] = respuestaMaster;
+        }
+      } else {
+        Serial.println("Error al parsear el JSON recibido del Master.");
+        sendJSON["WiFi"] = "error";
+      }
+    } else {
+      Serial.printf("Error en la petición HTTP. Código: %d\n", httpResponseCode);
+    }
+
+    // Liberar recursos de la conexión
+    http.end();
+  }
+
+  // ---- Impresión de resultados en JSON ----
   serializeJson(sendJSON, Serial);
   Serial.println();
 }

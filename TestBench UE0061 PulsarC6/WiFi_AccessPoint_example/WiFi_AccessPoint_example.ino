@@ -3,7 +3,7 @@
 #include <ArduinoJson.h>
 
 const char *ssid = "IngPruebas-Master";
-const char *password = "cachirula&lojansito";
+const char *password = "cachirula";
 
 // Iniciamos el servidor en el puerto 80
 WebServer server(80);
@@ -25,14 +25,13 @@ void handlePing() {
     return;
   }
 
-  String mensajeRecibido = docReq["mensaje"];
-  Serial.println("Recibido del Esclavo: " + mensajeRecibido);
+  String mensajeRecibido = docReq["message"];
+  Serial.println("message received: " + mensajeRecibido);
 
   // 3. Armamos el JSON de respuesta (Pong)
   JsonDocument docRes;
-  docRes["estatus"] = "Conexión Validada";
-  docRes["respuesta"] = "Pong desde el Master";
-  docRes["master_uptime_ms"] = millis();
+  docRes["status"] = "connection validated";
+  docRes["key"] = "pong";
 
   String jsonResponse;
   serializeJson(docRes, jsonResponse);
