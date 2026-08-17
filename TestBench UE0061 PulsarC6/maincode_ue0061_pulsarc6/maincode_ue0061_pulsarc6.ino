@@ -266,30 +266,11 @@ void checkPulsar() {
   sendJSON["System"] = "Ready";
   sendJSON["Module"] = "PulsarC6";
 
-  // ---- i2c block check ----
-  Wire.begin(SDA_PIN, SCL_PIN);
-  if (!i2cCheckDevice(0x3C)) {
-    sendJSON["i2c_bus"] = false;
-  } else {
-    sendJSON["i2c_bus"] = true;
-
-    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-    display.clearDisplay();
-    display.setTextSize(1.5);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(22, 0);
-    display.println(F("I2C Bus OK"));
-    display.display();
-  }
-
-  Wire.end();
-  pinMode(SDA_PIN, INPUT);
-  pinMode(SCL_PIN, INPUT);
-  delay(100);
-
   // ---- spi block check with sd ----
   SPI.begin(SDA_PIN, D12_PIN, SCL_PIN, D5_PIN);
+  bool stateSPI = "FAIL";
   if (SD.begin(D5_PIN)) {
+    stateSPI = "OK";
     sendJSON["init_sd"] = true;
     uint8_t cardType = SD.cardType();
     uint64_t cardSize = SD.cardSize() / (1024 * 1024);
@@ -301,6 +282,40 @@ void checkPulsar() {
     sendJSON["spi_bus"] = true;
   } else sendJSON["spi_bus"] = false;
 
+  SPI.end();
+
+  // ---- i2c block check ----
+  bool statei2c = false;
+  Wire.begin(SDA_PIN, SCL_PIN);
+  if (!i2cCheckDevice(0x3C)) {
+    sendJSON["i2c_bus"] = false;
+  } else {
+    sendJSON["i2c_bus"] = true;
+    statei2c = true;
+
+    // >> Encabezado
+    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+    display.clearDisplay();
+    display.setTextSize(1.5);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(5, 0);
+    display.println("Estado general:");
+    display.display();
+
+    // >> Estado Bus I2C
+    display.setCursor(5, 15);
+    display.println("Bus I2C:");
+    display.setCursor(60, 15);
+    display.println("OK");
+    display.display();
+
+    // >> Estado Bus SPI
+    display.setCursor(5, 25);
+    display.println("Bus SPI:");
+    display.setCursor(60, 25);
+    display.println(stateSPI);
+    display.display();
+  }
 
   // ---- mac id check and register ----
   WiFi.mode(WIFI_MODE_STA);
