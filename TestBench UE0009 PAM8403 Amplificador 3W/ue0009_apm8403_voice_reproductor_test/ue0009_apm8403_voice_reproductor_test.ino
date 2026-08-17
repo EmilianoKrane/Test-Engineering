@@ -11,8 +11,9 @@ const int SCK_PIN = 18;
 const int MISO_PIN = 19;
 const int MOSI_PIN = 23;
 
-// Pin de la bocina
-const int DAC_PIN = 25;
+const int DAC_PIN = 25;     // Pin de la bocina
+const int INT_RELAY = 26;   // GPIO de switch con relevadores
+const int INT_RELAY2 = 22;  // GPIO de switch con relevadores
 
 void setup() {
   Serial.begin(115200);
@@ -35,6 +36,11 @@ void setup() {
   File root = SD.open("/");
   listarArchivos(root);
   root.close();
+
+  pinMode(INT_RELAY, OUTPUT);
+  pinMode(INT_RELAY2, OUTPUT);
+  digitalWrite(INT_RELAY, HIGH);
+  digitalWrite(INT_RELAY2, HIGH);
 }
 
 void loop() {
@@ -42,6 +48,9 @@ void loop() {
   // Nota: En Arduino la ruta raíz es "/" en lugar de "/sd/"
   play_wav("/output_8bit_mono.wav", 0.8);
   // play_wav("/saludos_8bits.wav", 0.6);
+  digitalWrite(INT_RELAY, !digitalRead(INT_RELAY));
+  digitalWrite(INT_RELAY2, !digitalRead(INT_RELAY2));
+  delay(500);
 }
 
 // Función principal de reproducción

@@ -308,11 +308,12 @@ void checkPulsar() {
   sendJSON["mac"] = mac;
 
   // ---- WiFi check connection ----
-  int attempts = 0;  // Intentos antes de rechazar la conexión
+  int steps = 0;      // Contador de intentos realizados
+  int attempts = 10;  // Intentos antes de rechazar la conexión
   WiFi.begin(ssid, password);
   Serial.print("Connecting");
 
-  while (WiFi.status() != WL_CONNECTED && attempts < 8) {
+  while (WiFi.status() != WL_CONNECTED && steps < attempts) {
     Serial.print(".");
     attempts++;
     delay(500);
@@ -368,7 +369,7 @@ void checkPulsar() {
     sendJSON["WiFi_error"] = "no connection";
   }
 
-// ---- 
+  // ----
 
   // ---- Impresión de resultados en JSON ----
   serializeJson(sendJSON, Serial);
