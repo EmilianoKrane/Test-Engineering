@@ -1,3 +1,5 @@
+
+
 #ifndef ZIGBEE_MODE_ED
 #error "Zigbee end device mode is not selected in Tools->Zigbee mode"
 #endif
@@ -8,7 +10,7 @@
 #define ZIGBEE_LIGHT_ENDPOINT 10
 
 // Pines típicos del ESP32-C6 (ajusta según tu placa Pulsarc6 si es necesario)
-uint8_t led = 6; 
+uint8_t led = 6;
 uint8_t button = BOOT_PIN;
 
 // Instanciamos el endpoint de la luz
@@ -49,7 +51,7 @@ void setup() {
   }
 
   Serial.println("Buscando red del Coordinador para unirse...");
-  
+
   // Bucle de espera hasta encontrar la red del Switch
   while (!Zigbee.connected()) {
     Serial.print(".");
@@ -61,9 +63,9 @@ void setup() {
 void loop() {
   // Lectura del botón físico para un Hard Reset o encendido manual
   if (digitalRead(button) == LOW) {
-    delay(100); // Debounce básico
+    delay(100);  // Debounce básico
     uint32_t startTime = millis();
-    
+
     // Mientras el botón siga presionado...
     while (digitalRead(button) == LOW) {
       delay(50);
@@ -74,10 +76,10 @@ void loop() {
         Zigbee.factoryReset();
       }
     }
-    
+
     // Si fue un clic corto, alternamos la luz localmente (sin el switch)
     zbLight.setLight(!zbLight.getLightState());
   }
-  
+
   delay(100);
 }

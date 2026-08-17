@@ -312,7 +312,7 @@ void checkPulsar() {
   WiFi.begin(ssid, password);
   Serial.print("Connecting");
 
-  while (WiFi.status() != WL_CONNECTED && attempts < 5) {
+  while (WiFi.status() != WL_CONNECTED && attempts < 8) {
     Serial.print(".");
     attempts++;
     delay(500);

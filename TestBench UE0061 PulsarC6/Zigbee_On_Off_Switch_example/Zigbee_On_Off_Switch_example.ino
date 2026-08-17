@@ -1,31 +1,4 @@
-// Copyright 2024 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
 
-/**
- * @brief This example demonstrates simple Zigbee light switch.
- *
- * The example demonstrates how to use Zigbee library to control a light bulb.
- * The light bulb is a Zigbee end device, which is controlled by a Zigbee coordinator (Switch).
- * Button switch and Zigbee runs in separate tasks.
- *
- * Proper Zigbee mode must be selected in Tools->Zigbee mode
- * and also the correct partition scheme must be selected in Tools->Partition Scheme.
- *
- * Please check the README.md for instructions and more detailed description.
- *
- * Created by Jan Procházka (https://github.com/P-R-O-C-H-Y/)
- */
 
 #ifndef ZIGBEE_MODE_ZCZR
 #error "Zigbee coordinator mode is not selected in Tools->Zigbee mode"
@@ -37,7 +10,7 @@
 #define SWITCH_ENDPOINT_NUMBER 5
 
 #define GPIO_INPUT_IO_TOGGLE_SWITCH 9
-#define PAIR_SIZE(TYPE_STR_PAIR)    (sizeof(TYPE_STR_PAIR) / sizeof(TYPE_STR_PAIR[0]))
+#define PAIR_SIZE(TYPE_STR_PAIR) (sizeof(TYPE_STR_PAIR) / sizeof(TYPE_STR_PAIR[0]))
 
 typedef enum {
   SWITCH_ON_CONTROL,
@@ -62,7 +35,7 @@ typedef enum {
   SWITCH_RELEASE_DETECTED,
 } SwitchState;
 
-static SwitchData buttonFunctionPair[] = {{GPIO_INPUT_IO_TOGGLE_SWITCH, SWITCH_ONOFF_TOGGLE_CONTROL}};
+static SwitchData buttonFunctionPair[] = { { GPIO_INPUT_IO_TOGGLE_SWITCH, SWITCH_ONOFF_TOGGLE_CONTROL } };
 
 ZigbeeSwitch zbSwitch = ZigbeeSwitch(SWITCH_ENDPOINT_NUMBER);
 
@@ -141,8 +114,7 @@ void setup() {
     Serial.printf("Device on endpoint %d, short address: 0x%x\r\n", device->endpoint, device->short_addr);
     Serial.printf(
       "IEEE Address: %02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X\r\n", device->ieee_addr[7], device->ieee_addr[6], device->ieee_addr[5], device->ieee_addr[4],
-      device->ieee_addr[3], device->ieee_addr[2], device->ieee_addr[1], device->ieee_addr[0]
-    );
+      device->ieee_addr[3], device->ieee_addr[2], device->ieee_addr[1], device->ieee_addr[0]);
     char *manufacturer = zbSwitch.readManufacturer(device->endpoint, device->short_addr, device->ieee_addr);
     char *model = zbSwitch.readModel(device->endpoint, device->short_addr, device->ieee_addr);
     if (manufacturer != nullptr) {
@@ -172,7 +144,7 @@ void loop() {
   while (eventFlag) {
     bool value = digitalRead(pin);
     switch (buttonState) {
-      case SWITCH_IDLE:           buttonState = (value == LOW) ? SWITCH_PRESS_DETECTED : SWITCH_IDLE; break;
+      case SWITCH_IDLE: buttonState = (value == LOW) ? SWITCH_PRESS_DETECTED : SWITCH_IDLE; break;
       case SWITCH_PRESS_DETECTED: buttonState = (value == LOW) ? SWITCH_PRESS_DETECTED : SWITCH_RELEASE_DETECTED; break;
       case SWITCH_RELEASE_DETECTED:
         buttonState = SWITCH_IDLE;
