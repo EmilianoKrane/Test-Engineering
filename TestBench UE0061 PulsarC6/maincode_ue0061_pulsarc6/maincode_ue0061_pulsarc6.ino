@@ -308,14 +308,15 @@ void checkPulsar() {
   sendJSON["mac"] = mac;
 
   // ---- WiFi check connection ----
+  int attempts = 0;  // Intentos antes de rechazar la conexión
   WiFi.begin(ssid, password);
-  Serial.print("Conectando");
+  Serial.print("Connecting");
 
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
+  while (WiFi.status() != WL_CONNECTED && attempts < 5) {
     Serial.print(".");
+    attempts++;
+    delay(500);
   }
-  Serial.println("\n¡Conectado a la red de Pruebas!");
 
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
@@ -325,13 +326,14 @@ void checkPulsar() {
     http.addHeader("Content-Type", "application/json");
 
     // 1. Crear el JSON de envío (Ping)
+    Serial.println("\n¡Connected to the test network!");
     JsonDocument docReq;
     docReq["device"] = "PulsarC6";
     docReq["message"] = "ping to validate connection";
 
     String jsonRequest;
     serializeJson(docReq, jsonRequest);
-    Serial.println("\nSending: " + jsonRequest);
+    Serial.println("Sending: " + jsonRequest);
 
     // 2. Enviar la petición POST y guardar el código de respuesta HTTP
     int httpResponseCode = http.POST(jsonRequest);
@@ -353,15 +355,20 @@ void checkPulsar() {
         }
       } else {
         Serial.println("Error al parsear el JSON recibido del Master.");
-        sendJSON["WiFi"] = "error";
+        sendJSON["WiFi"] = "error JSON";
       }
     } else {
       Serial.printf("Error en la petición HTTP. Código: %d\n", httpResponseCode);
     }
 
-    // Liberar recursos de la conexión
     http.end();
+  } else {
+    Serial.println("");
+    sendJSON["WiFi_status"] = false;
+    sendJSON["WiFi_error"] = "no connection";
   }
+
+// ---- 
 
   // ---- Impresión de resultados en JSON ----
   serializeJson(sendJSON, Serial);
