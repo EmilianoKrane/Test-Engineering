@@ -259,83 +259,114 @@ void loop() {
   }
 }
 
-
 void checkPulsar() {
   sendJSON.clear();
   sendJSON["System"] = "Ready";
   sendJSON["Module"] = "PulsarC6";
 
-  bool statei2c = false;
+  bool statusSPI = false;
   String stateSPI = "FAIL";
+  bool statusI2C = false;
+  bool statusWiFi = false;
+
+  // =========================================================================
+  // 1. CHEQUEO DEL BUS SPI (Tarjeta SD)
+  // =========================================================================
+  // Iniciar SPI con los pines compartidos
 
   /*
-  // ---- SPI block check with sd ----
   SPI.begin(SDA_PIN, D12_PIN, SCL_PIN, D5_PIN);
+
   if (SD.begin(D5_PIN)) {
+    statusSPI = true;
     stateSPI = "OK";
     sendJSON["init_sd"] = true;
+    sendJSON["spi_bus"] = true;
+
     uint8_t cardType = SD.cardType();
     uint64_t cardSize = SD.cardSize() / (1024 * 1024);
-    if (cardType == CARD_NONE) sendJSON["sd_att"] = "No SD card attached";
-    if (cardType == CARD_MMC) sendJSON["sd_type"] = "MMC";
-    if (cardType == CARD_SD) sendJSON["sd_type"] = "SDSC";
-    if (cardType == CARD_SDHC) sendJSON["sd_type"] = "SDHC";
-    sendJSON["sd_size"] = cardSize;
-    sendJSON["spi_bus"] = true;
-  } else sendJSON["spi_bus"] = false;
 
-  SD.end();
-  SPI.end();
-  pinMode(D5_PIN, OUTPUT);
-  digitalWrite(D5_PIN, HIGH);
-  pinMode(SDA_PIN, INPUT_PULLUP);
-  pinMode(SCL_PIN, INPUT_PULLUP);
-  delay(500);
-  */
-
-  // ---- I2C block check ----
-  Wire.begin(SDA_PIN, SCL_PIN);
-  delay(100);
-  if (!i2cCheckDevice(0x3C)) {
-    sendJSON["i2c_bus"] = false;
+    if (cardType == CARD_NONE) {
+      sendJSON["sd_att"] = "No SD card attached";
+    } else {
+      if (cardType == CARD_MMC) sendJSON["sd_type"] = "MMC";
+      if (cardType == CARD_SD) sendJSON["sd_type"] = "SDSC";
+      if (cardType == CARD_SDHC) sendJSON["sd_type"] = "SDHC";
+      sendJSON["sd_size"] = cardSize;
+    }
   } else {
-    sendJSON["i2c_bus"] = true;
-    statei2c = true;
-
-    // >> Encabezado
-    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-    display.clearDisplay();
-    display.setTextSize(1.5);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(5, 0);
-    display.println("Estado general:");
-    display.display();
-
-    // >> Estado Bus I2C
-    display.setCursor(5, 15);
-    display.println("Bus I2C:");
-    display.setCursor(60, 15);
-    display.println("OK");
-    display.display();
-
-    // >> Estado Bus SPI
-    display.setCursor(5, 25);
-    display.println("Bus SPI:");
-    display.setCursor(60, 25);
-    display.println(stateSPI);
-    display.display();
+    sendJSON["init_sd"] = false;
+    sendJSON["spi_bus"] = false;
   }
 
-  // ---- mac id check and register ----
+  // --- Liberación obligatoria del bus SPI para compartir pines ---
+  SD.end();
+  SPI.end();
+
+  // Desactivar Chip Select (HIGH) para evitar colisiones en la línea MISO/MOSI
+  pinMode(D5_PIN, OUTPUT);
+  digitalWrite(D5_PIN, HIGH);
+
+  // Restaurar líneas a Pull-Up para preparar el bus I2C
+  pinMode(SDA_PIN, INPUT_PULLUP);
+  pinMode(SCL_PIN, INPUT_PULLUP);
+  delay(100);
+
+*/
+  // =========================================================================
+  // 2. CHEQUEO DEL BUS I2C Y PANTALLA OLED
+  // =========================================================================
+  Wire.begin(SDA_PIN, SCL_PIN);
+  delay(50);
+
+  if (i2cCheckDevice(0x3C)) {
+    statusI2C = true;
+    sendJSON["i2c_bus"] = true;
+
+    // Inicializar y dibujar reporte inicial en la OLED
+    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+
+    // Encabezado
+    display.setCursor(0, 0);
+    display.println("Estado General:");
+
+    // Estado Bus SPI
+    display.setCursor(0, 16);
+    display.print("Bus SPI: ");
+    display.setCursor(65, 16);
+    display.println(stateSPI);
+
+    // Estado Bus I2C
+    display.setCursor(0, 26);
+    display.print("Bus I2C: ");
+    display.setCursor(65, 26);
+    display.println("OK");
+
+    // Placeholder de WiFi mientras conecta
+    display.setCursor(0, 36);
+    display.print("WiFi:    ");
+    display.setCursor(55, 36);
+    display.println("Checking...");
+
+    display.display();
+  } else {
+    sendJSON["i2c_bus"] = false;
+  }
+
+  // =========================================================================
+  // 3. CHEQUEO DE RED Y COMUNICACIÓN WIFI
+  // =========================================================================
   WiFi.mode(WIFI_MODE_STA);
   String mac = WiFi.macAddress();
   sendJSON["mac"] = mac;
 
-  // ---- WiFi check connection ----
-  int steps = 0;      // Contador de intentos realizados
-  int attempts = 20;  // Intentos antes de rechazar la conexión
+  int steps = 0;
+  int attempts = 20;
   WiFi.begin(ssid, password);
-  Serial.print("Connecting");
+  Serial.print("Connecting to WiFi");
 
   while (WiFi.status() != WL_CONNECTED && steps < attempts) {
     Serial.print(".");
@@ -344,67 +375,60 @@ void checkPulsar() {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nConnected to test network!");
+
     HTTPClient http;
     http.begin(serverUrl);
-
-    // Especificar que el contenido que enviamos es un JSON
     http.addHeader("Content-Type", "application/json");
 
-    // 1. Crear el JSON de envío (Ping)
-    Serial.println("\n¡Connected to the test network!");
+    // Payload de prueba (Ping)
     JsonDocument docReq;
     docReq["device"] = "PulsarC6";
     docReq["message"] = "ping to validate connection";
 
     String jsonRequest;
     serializeJson(docReq, jsonRequest);
-    Serial.println("Sending: " + jsonRequest);
 
-    // 2. Enviar la petición POST y guardar el código de respuesta HTTP
     int httpResponseCode = http.POST(jsonRequest);
 
-    // 3. Procesar la respuesta del Master
     if (httpResponseCode > 0) {
-      String payload = http.getString();  // Extraer el JSON del Master
-
+      String payload = http.getString();
       JsonDocument docRes;
       DeserializationError error = deserializeJson(docRes, payload);
 
-      if (!error) {
-        String respuestaMaster = docRes["key"];
-
-        if (respuestaMaster == "pong") {
-          sendJSON["WiFi_status"] = true;
-          //sendJSON["WiFi_code"] = httpResponseCode;
-          sendJSON["WiFi_message"] = respuestaMaster;
-
-          if (statei2c) {
-            // >> Debug Estado WiFi en OLED
-            display.setCursor(5, 35);
-            display.println("WiFi:");
-            display.setCursor(60, 35);
-            display.println("OK");
-            display.display();
-          }
-        }
+      if (!error && docRes["key"] == "pong") {
+        statusWiFi = true;
+        sendJSON["WiFi_status"] = true;
+        sendJSON["WiFi_message"] = "pong";
       } else {
-        Serial.println("Error al parsear el JSON recibido del Master.");
-        sendJSON["WiFi"] = "error JSON";
+        sendJSON["WiFi_status"] = false;
+        sendJSON["WiFi_error"] = "bad response/json";
       }
     } else {
-      Serial.printf("Error en la petición HTTP. Código: %d\n", httpResponseCode);
+      sendJSON["WiFi_status"] = false;
+      sendJSON["WiFi_error"] = "HTTP failed: " + String(httpResponseCode);
     }
-
     http.end();
   } else {
-    Serial.println("");
+    Serial.println("\nWiFi connection timed out");
     sendJSON["WiFi_status"] = false;
     sendJSON["WiFi_error"] = "no connection";
   }
 
-  // ----
+  // =========================================================================
+  // 4. ACTUALIZACIÓN FINAL EN PANTALLA OLED
+  // =========================================================================
+  if (statusI2C) {
+    // Sobrescribir la línea de estado de WiFi
+    display.fillRect(65, 36, 60, 10, SSD1306_BLACK);
+    display.setCursor(65, 36);
+    display.println(statusWiFi ? "OK" : "FAIL");
+    display.display();
+  }
 
-  // ---- Impresión de resultados en JSON ----
+  // =========================================================================
+  // 5. SALIDA JSON FINAL
+  // =========================================================================
   serializeJson(sendJSON, Serial);
   Serial.println();
 }
