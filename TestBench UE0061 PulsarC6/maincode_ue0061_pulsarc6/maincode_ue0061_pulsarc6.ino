@@ -258,23 +258,69 @@ void loop() {
     demo();
   }
 }
-
 void checkPulsar() {
   sendJSON.clear();
   sendJSON["System"] = "Ready";
   sendJSON["Module"] = "PulsarC6";
 
+  bool statusI2C = false;
   bool statusSPI = false;
   String stateSPI = "FAIL";
-  bool statusI2C = false;
   bool statusWiFi = false;
 
   // =========================================================================
-  // 1. CHEQUEO DEL BUS SPI (Tarjeta SD)
+  // 1. INICIALIZACIÓN I2C Y PANTALLA OLED
   // =========================================================================
-  // Iniciar SPI con los pines compartidos
+  // Asegurar pines limpios antes de arrancar I2C
+  gpio_reset_pin((gpio_num_t)SDA_PIN);
+  gpio_reset_pin((gpio_num_t)SCL_PIN);
+  Wire.begin(SDA_PIN, SCL_PIN);
+  delay(50);
 
-  /*
+  if (i2cCheckDevice(0x3C)) {
+    statusI2C = true;
+    sendJSON["i2c_bus"] = true;
+
+    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+
+    // Encabezado
+    display.setCursor(0, 0);
+    display.println("Estado General:");
+
+    // Estado Bus I2C
+    display.setCursor(0, 16);
+    display.print("Bus I2C: ");
+    display.setCursor(65, 16);
+    display.println("OK");
+
+    // Placeholder Bus SPI
+    display.setCursor(0, 26);
+    display.print("Bus SPI: ");
+    display.setCursor(65, 26);
+    display.println("Test...");
+
+    // Placeholder WiFi
+    display.setCursor(0, 36);
+    display.print("WiFi:    ");
+    display.setCursor(65, 36);
+    display.println("Wait...");
+
+    display.display();
+  } else {
+    sendJSON["i2c_bus"] = false;
+  }
+
+  // =========================================================================
+  // 2. LIBERAR I2C Y CAMBIAR A SPI
+  // =========================================================================
+  Wire.end();
+  gpio_reset_pin((gpio_num_t)SDA_PIN);
+  gpio_reset_pin((gpio_num_t)SCL_PIN);
+  delay(50);  // Tiempo para que las líneas se estabilicen
+
   SPI.begin(SDA_PIN, D12_PIN, SCL_PIN, D5_PIN);
 
   if (SD.begin(D5_PIN)) {
@@ -299,65 +345,38 @@ void checkPulsar() {
     sendJSON["spi_bus"] = false;
   }
 
-  // --- Liberación obligatoria del bus SPI para compartir pines ---
+  // Liberar el hardware SPI
   SD.end();
   SPI.end();
-
-  // Desactivar Chip Select (HIGH) para evitar colisiones en la línea MISO/MOSI
   pinMode(D5_PIN, OUTPUT);
-  digitalWrite(D5_PIN, HIGH);
+  digitalWrite(D5_PIN, HIGH);  // Forzar CS alto (deseleccionar módulo)
 
-  // Restaurar líneas a Pull-Up para preparar el bus I2C
+  // =========================================================================
+  // 3. RECUPERAR I2C Y ACTUALIZAR OLED
+  // =========================================================================
+  gpio_reset_pin((gpio_num_t)SDA_PIN);
+  gpio_reset_pin((gpio_num_t)SCL_PIN);
   pinMode(SDA_PIN, INPUT_PULLUP);
   pinMode(SCL_PIN, INPUT_PULLUP);
-  delay(100);
-
-*/
-  // =========================================================================
-  // 2. CHEQUEO DEL BUS I2C Y PANTALLA OLED
-  // =========================================================================
-  Wire.begin(SDA_PIN, SCL_PIN);
   delay(50);
 
-  if (i2cCheckDevice(0x3C)) {
-    statusI2C = true;
-    sendJSON["i2c_bus"] = true;
+  if (statusI2C) {
+    Wire.begin(SDA_PIN, SCL_PIN);
 
-    // Inicializar y dibujar reporte inicial en la OLED
-    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-
-    // Encabezado
-    display.setCursor(0, 0);
-    display.println("Estado General:");
-
-    // Estado Bus SPI
-    display.setCursor(0, 16);
-    display.print("Bus SPI: ");
-    display.setCursor(65, 16);
+    // Sobrescribir "Test..." con el estado del SPI
+    display.fillRect(65, 26, 60, 10, SSD1306_BLACK);
+    display.setCursor(65, 26);
     display.println(stateSPI);
 
-    // Estado Bus I2C
-    display.setCursor(0, 26);
-    display.print("Bus I2C: ");
-    display.setCursor(65, 26);
-    display.println("OK");
-
-    // Placeholder de WiFi mientras conecta
-    display.setCursor(0, 36);
-    display.print("WiFi:    ");
-    display.setCursor(55, 36);
-    display.println("Checking...");
-
+    // Cambiar estado WiFi de "Wait..." a "Check..."
+    display.fillRect(65, 36, 60, 10, SSD1306_BLACK);
+    display.setCursor(65, 36);
+    display.println("Check...");
     display.display();
-  } else {
-    sendJSON["i2c_bus"] = false;
   }
 
   // =========================================================================
-  // 3. CHEQUEO DE RED Y COMUNICACIÓN WIFI
+  // 4. CHEQUEO DE RED Y COMUNICACIÓN WIFI
   // =========================================================================
   WiFi.mode(WIFI_MODE_STA);
   String mac = WiFi.macAddress();
@@ -381,7 +400,6 @@ void checkPulsar() {
     http.begin(serverUrl);
     http.addHeader("Content-Type", "application/json");
 
-    // Payload de prueba (Ping)
     JsonDocument docReq;
     docReq["device"] = "PulsarC6";
     docReq["message"] = "ping to validate connection";
@@ -416,10 +434,9 @@ void checkPulsar() {
   }
 
   // =========================================================================
-  // 4. ACTUALIZACIÓN FINAL EN PANTALLA OLED
+  // 5. ACTUALIZACIÓN FINAL DE WIFI EN OLED
   // =========================================================================
   if (statusI2C) {
-    // Sobrescribir la línea de estado de WiFi
     display.fillRect(65, 36, 60, 10, SSD1306_BLACK);
     display.setCursor(65, 36);
     display.println(statusWiFi ? "OK" : "FAIL");
@@ -427,11 +444,12 @@ void checkPulsar() {
   }
 
   // =========================================================================
-  // 5. SALIDA JSON FINAL
+  // 6. SALIDA JSON FINAL (Puerto Serial)
   // =========================================================================
   serializeJson(sendJSON, Serial);
   Serial.println();
 }
+
 
 void serialDebug(String str) {
   sendJSON.clear();
