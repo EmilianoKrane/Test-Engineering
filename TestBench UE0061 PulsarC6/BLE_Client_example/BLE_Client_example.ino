@@ -2,7 +2,7 @@
 #include <ArduinoJson.h>
 
 static BLEUUID serviceUUID("12345678-1234-5678-1234-56789abcdef0");
-static BLEUUID    charUUID("abcdef01-1234-5678-1234-56789abcdef0");
+static BLEUUID charUUID("abcdef01-1234-5678-1234-56789abcdef0");
 
 static boolean doConnect = false;
 static boolean connected = false;
@@ -11,7 +11,7 @@ static BLERemoteCharacteristic* pRemoteCharacteristic;
 static BLEAdvertisedDevice* myDevice;
 
 // Callback para detectar el Servidor durante el escaneo
-class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
+class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
   void onResult(BLEAdvertisedDevice advertisedDevice) {
     if (advertisedDevice.haveServiceUUID() && advertisedDevice.isAdvertisingService(serviceUUID)) {
       BLEDevice::getScan()->stop();
@@ -25,8 +25,8 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
 
 bool connectToServer() {
   Serial.println("Conectando al Servidor...");
-  BLEClient*  pClient  = BLEDevice::createClient();
-  pClient->connect(myDevice); 
+  BLEClient* pClient = BLEDevice::createClient();
+  pClient->connect(myDevice);
 
   BLERemoteService* pRemoteService = pClient->getService(serviceUUID);
   if (pRemoteService == nullptr) {
@@ -72,8 +72,8 @@ void loop() {
   // Si estamos conectados, enviamos el JSON
   if (connected) {
     // 1. Simular lectura de sensores
-    float temperaturaActual = random(2000, 3000) / 100.0; // Ej: 25.40
-    int humedadActual = random(40, 80);                   // Ej: 60
+    float temperaturaActual = random(2000, 3000) / 100.0;  // Ej: 25.40
+    int humedadActual = random(40, 80);                    // Ej: 60
 
     // 2. Construir el JSON
     StaticJsonDocument<200> doc;
@@ -88,9 +88,9 @@ void loop() {
     Serial.println("Enviando JSON: " + jsonString);
     pRemoteCharacteristic->writeValue(jsonString.c_str(), jsonString.length());
 
-  } else if(doScan){
+  } else if (doScan) {
     BLEDevice::getScan()->start(0);  // Reiniciar escaneo si perdimos conexión
   }
-  
-  delay(5000); // Enviar datos cada 5 segundos
+
+  delay(5000);  // Enviar datos cada 5 segundos
 }

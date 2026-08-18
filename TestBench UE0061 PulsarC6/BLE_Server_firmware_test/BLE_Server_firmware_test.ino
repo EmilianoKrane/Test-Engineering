@@ -1,3 +1,13 @@
+/*
+Este firmware es una adaptación del ejemplo BLE_Server_example contenido en el mismo 
+directorio, con las claves de JSON que entrega el firmware de prueba flasheado en las pulsarc6
+para la revisión de sus perifericos. 
+
+Entrega en formato JSON los resultados obtenidos para su registro y validación en el frontend 
+de pruebas
+*/
+
+
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h>
