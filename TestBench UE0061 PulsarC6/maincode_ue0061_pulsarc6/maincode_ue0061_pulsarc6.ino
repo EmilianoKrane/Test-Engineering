@@ -2,7 +2,6 @@
 ue0061 firmware test main pulsar c6
 */
 
-
 // ==== BIBLIOTECAS ====
 #include <Wire.h>
 #include <WiFi.h>
@@ -334,13 +333,13 @@ void checkPulsar() {
 
   // ---- WiFi check connection ----
   int steps = 0;      // Contador de intentos realizados
-  int attempts = 10;  // Intentos antes de rechazar la conexión
+  int attempts = 20;  // Intentos antes de rechazar la conexión
   WiFi.begin(ssid, password);
   Serial.print("Connecting");
 
   while (WiFi.status() != WL_CONNECTED && steps < attempts) {
     Serial.print(".");
-    attempts++;
+    steps++;
     delay(500);
   }
 
@@ -376,15 +375,17 @@ void checkPulsar() {
 
         if (respuestaMaster == "pong") {
           sendJSON["WiFi_status"] = true;
-          sendJSON["WiFi_code"] = httpResponseCode;
+          //sendJSON["WiFi_code"] = httpResponseCode;
           sendJSON["WiFi_message"] = respuestaMaster;
 
-          // >> Debug Estado WiFi en OLED
-          display.setCursor(5, 35);
-          display.println("WiFi:");
-          display.setCursor(60, 35);
-          display.println("OK");
-          display.display();
+          if (statei2c) {
+            // >> Debug Estado WiFi en OLED
+            display.setCursor(5, 35);
+            display.println("WiFi:");
+            display.setCursor(60, 35);
+            display.println("OK");
+            display.display();
+          }
         }
       } else {
         Serial.println("Error al parsear el JSON recibido del Master.");
