@@ -266,9 +266,12 @@ void checkPulsar() {
   sendJSON["System"] = "Ready";
   sendJSON["Module"] = "PulsarC6";
 
-  // ---- spi block check with sd ----
+  bool statei2c = false;
+  String stateSPI = "FAIL";
+
+  /*
+  // ---- SPI block check with sd ----
   SPI.begin(SDA_PIN, D12_PIN, SCL_PIN, D5_PIN);
-  bool stateSPI = "FAIL";
   if (SD.begin(D5_PIN)) {
     stateSPI = "OK";
     sendJSON["init_sd"] = true;
@@ -282,11 +285,18 @@ void checkPulsar() {
     sendJSON["spi_bus"] = true;
   } else sendJSON["spi_bus"] = false;
 
+  SD.end();
   SPI.end();
+  pinMode(D5_PIN, OUTPUT);
+  digitalWrite(D5_PIN, HIGH);
+  pinMode(SDA_PIN, INPUT_PULLUP);
+  pinMode(SCL_PIN, INPUT_PULLUP);
+  delay(500);
+  */
 
-  // ---- i2c block check ----
-  bool statei2c = false;
+  // ---- I2C block check ----
   Wire.begin(SDA_PIN, SCL_PIN);
+  delay(100);
   if (!i2cCheckDevice(0x3C)) {
     sendJSON["i2c_bus"] = false;
   } else {
@@ -368,6 +378,13 @@ void checkPulsar() {
           sendJSON["WiFi_status"] = true;
           sendJSON["WiFi_code"] = httpResponseCode;
           sendJSON["WiFi_message"] = respuestaMaster;
+
+          // >> Debug Estado WiFi en OLED
+          display.setCursor(5, 35);
+          display.println("WiFi:");
+          display.setCursor(60, 35);
+          display.println("OK");
+          display.display();
         }
       } else {
         Serial.println("Error al parsear el JSON recibido del Master.");
