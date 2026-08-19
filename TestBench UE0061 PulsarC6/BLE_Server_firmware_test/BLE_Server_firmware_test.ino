@@ -49,9 +49,12 @@ class MyCharacteristicCallbacks : public BLECharacteristicCallbacks {
       DeserializationError error = deserializeJson(doc, rxValue);
 
       if (!error) {
-        float temp = doc["temperatura"];
-        int hum = doc["humedad"];
-        Serial.printf("Parseado OK -> Temp: %.2f C | Humedad: %d %%\n", temp, hum);
+        bool i2c = doc["i2c_bus"];
+        bool spi = doc["spi_bus"];
+        bool wifi = doc["WiFi_status"];
+        String mac = doc["mac"];
+
+        Serial.print("Parseado OK -> i2c:" + String(i2c) + " spi: " + String(spi) + " wifi: " + String(wifi) + " mac: " + mac + "\n");
       } else {
         Serial.println("Error al parsear el JSON");
       }

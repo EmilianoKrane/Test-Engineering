@@ -11,10 +11,10 @@ ue0061 firmware test main pulsar c6
 #include <Adafruit_NeoPixel.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include "BLEDevice.h"
 #include "FS.h"
 #include "SD.h"
 #include "SPI.h"
-// #include "DevLab_Test_PulsarC6.h"
 
 // ==== DECLARACIÓN DE GPIOS ====
 #define SDA_PIN 6   // >> GPIO06 Señal de datos en protocolo I2C
@@ -38,6 +38,14 @@ ue0061 firmware test main pulsar c6
 #define D19_PIN 23
 #define D21_PIN 5
 
+// ==== DECLARACIÓN DE SERV Y CHARACT BLE ====
+static BLEUUID serviceUUID("12345678-1234-5678-1234-56789abcdef0");
+static BLEUUID charUUID("abcdef01-1234-5678-1234-56789abcdef0");
+
+// ==== DECLARACIÓN DE CREDENCIALES DE WIFI ====
+const char *ssid = "IngPruebas-Master";
+const char *password = "cachirula";
+const char *serverUrl = "http://192.168.4.1/ping";
 
 // ==== DECLARACIÓN DE VARIABLES GLOBALES y MACROS ====
 #define NUMPIXELS 26  // Número de Neopixeles en matrix
@@ -51,15 +59,31 @@ bool status_OLED = false;  // Variable check de inicialización OLED por I2Cs
 String JSON_entrada;  // Variable que recibe JSON del frontend
 String JSON_salida;   // Variable que envía el JSON de datos
 
-const char *ssid = "IngPruebas-Master";
-const char *password = "cachirula";
-const char *serverUrl = "http://192.168.4.1/ping";
+static boolean doConnect = false;  // Variables de BLE
+static boolean connected = false;
+static boolean doScan = false;
+static BLERemoteCharacteristic *pRemoteCharacteristic;
+static BLEAdvertisedDevice *myDevice;
 
 // ==== CREACIÓN DE OBJETOS ====
 StaticJsonDocument<200> receiveJSON;
 StaticJsonDocument<200> sendJSON;
 Adafruit_NeoPixel pixels(NUMPIXELS, NEOP_PIN, NEO_GRB + NEO_KHZ800);
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);  // Objeto de la OLED
+
+
+// Callback para detectar el Servidor durante el escaneo
+class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
+  void onResult(BLEAdvertisedDevice advertisedDevice) {
+    if (advertisedDevice.haveServiceUUID() && advertisedDevice.isAdvertisingService(serviceUUID)) {
+      BLEDevice::getScan()->stop();
+      myDevice = new BLEAdvertisedDevice(advertisedDevice);
+      doConnect = true;
+      doScan = true;
+      Serial.println("¡Servidor PulsarC6 encontrado!");
+    }
+  }
+};
 
 void setup() {
   // ---- Inicializaciones ----
@@ -68,8 +92,6 @@ void setup() {
 
   // ---- rutina de chequeo de bloques de comunicación ----
   checkPulsar();  // Revisión de bloque i2c y spi
-
-
 
   // ---- Configuración de GPIOS Entrada/Salida ----
   pinMode(SDA_PIN, OUTPUT);
@@ -258,6 +280,8 @@ void loop() {
     demo();
   }
 }
+
+
 void checkPulsar() {
   sendJSON.clear();
   sendJSON["System"] = "Ready";
@@ -448,6 +472,75 @@ void checkPulsar() {
   // =========================================================================
   serializeJson(sendJSON, Serial);
   Serial.println();
+
+
+  // =========================================================================
+  // 7. TRANSMISIÓN DE RESULTADOS JSON POR BLE
+  // =========================================================================
+  BLEDevice::init("PulsarC6-Client");
+
+  // Iniciar escaneo para buscar el servidor
+  BLEScan *pBLEScan = BLEDevice::getScan();
+  pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
+  pBLEScan->setInterval(1349);
+  pBLEScan->setWindow(449);
+  pBLEScan->setActiveScan(true);
+  pBLEScan->start(5, false);
+  
+  if (doConnect) {
+    Serial.println("[BLE] Servidor encontrado. Intentando conexion...");
+
+    if (connectToServer()) {
+      Serial.println("[BLE] Conectado exitosamente al servidor.");
+
+      // Construir el string desde tu sendJSON global
+      String jsonString;
+      serializeJson(sendJSON, jsonString);
+
+      Serial.println("[BLE] Escribiendo JSON en la caracteristica...");
+      // Escribir en el servidor
+      pRemoteCharacteristic->writeValue(jsonString.c_str(), jsonString.length());
+
+      Serial.println("[BLE] JSON enviado correctamente. Desconectando...");
+
+      // Limpieza: Nos desconectamos una vez enviado el payload
+      BLEDevice::createClient()->disconnect();
+      connected = false;
+      doConnect = false;
+
+    } else {
+      Serial.println("[BLE] Fallo al conectar con el servidor encontrado.");
+    }
+  } else {
+    Serial.println("[BLE] Tiempo de escaneo agotado. No se encontro el servidor.");
+  }
+
+  // Opcional: Apagar el hardware BLE para ahorrar memoria y energia si ya no se usara
+  BLEDevice::deinit();
+  Serial.println("[BLE] Modulo BLE apagado.");
+  Serial.println("=========================================\n");
+}
+
+
+bool connectToServer() {
+  Serial.println("Conectando al Servidor...");
+  BLEClient *pClient = BLEDevice::createClient();
+  pClient->connect(myDevice);
+
+  BLERemoteService *pRemoteService = pClient->getService(serviceUUID);
+  if (pRemoteService == nullptr) {
+    pClient->disconnect();
+    return false;
+  }
+
+  pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
+  if (pRemoteCharacteristic == nullptr) {
+    pClient->disconnect();
+    return false;
+  }
+
+  connected = true;
+  return true;
 }
 
 
