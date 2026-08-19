@@ -284,7 +284,7 @@ void loop() {
 
 void checkPulsar() {
   sendJSON.clear();
-  sendJSON["System"] = "Ready";
+  sendJSON["Test"] = "Wireless";
   sendJSON["Module"] = "PulsarC6";
 
   bool statusI2C = false;
@@ -486,7 +486,7 @@ void checkPulsar() {
   pBLEScan->setWindow(449);
   pBLEScan->setActiveScan(true);
   pBLEScan->start(5, false);
-  
+
   if (doConnect) {
     Serial.println("[BLE] Servidor encontrado. Intentando conexion...");
 
