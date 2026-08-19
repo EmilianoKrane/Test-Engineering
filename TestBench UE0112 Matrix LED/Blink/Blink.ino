@@ -15,7 +15,7 @@ Adafruit_NeoPixel pixels(NUMPIXELS, PIN1, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel matrix(NUMPIXELS, PIN2, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel neopixels(NUMPIXELS, PIN3, NEO_GRB + NEO_KHZ800);
 
-#define DELAYVAL 100  // Time (in milliseconds) to pause between pixels
+#define DELAYVAL 10  // Time (in milliseconds) to pause between pixels
 
 // Variables de intensidad
 int intensity = 5;         // 50=Bajo, 150=Medio, 255=Alto
@@ -31,6 +31,8 @@ void setup() {
 #if defined(__AVR_ATtiny85__) && (F_CPU == 16000000)
   clock_prescale_set(clock_div_1);
 #endif
+
+  Serial.begin(115200);
 
   // Configuramos el botón con resistencia PULL-UP interna.
   // El botón debe conectarse entre el GPIO 9 y GND (Tierra).
@@ -94,29 +96,28 @@ void loop() {
   neopixels.clear();
 
 
-
+  Serial.println("pixels en verde");
   for (int i = 0; i < NUMPIXELS / 2; i++) {
     pixels.setPixelColor(i, pixels.Color(0, intensity, 0));
     pixels.show();
     smartDelay(DELAYVAL);  // <-- Usamos nuestro delay inteligente
   }
 
+  Serial.println("matrix en verde");
   for (int i = 0; i < NUMPIXELS / 2; i++) {
     matrix.setPixelColor(i, matrix.Color(0, intensity, 0));
     matrix.show();
     smartDelay(DELAYVAL);
   }
 
-
+  Serial.println("neopixels en verde");
   for (int i = 0; i < NUMPIXELS; i++) {
     neopixels.setPixelColor(i, neopixels.Color(0, intensity, 0));
     neopixels.show();
     //smartDelay(DELAYVAL);
   }
 
-
-
-
+  Serial.println("pixels en rojo");
   for (int i = 0; i < NUMPIXELS / 2; i++) {
     pixels.setPixelColor(i, pixels.Color(intensity, 0, 0));
     pixels.show();
@@ -135,6 +136,7 @@ void loop() {
     //smartDelay(DELAYVAL);
   }
 
+  Serial.println("pixels en azul");
   for (int i = 0; i < NUMPIXELS / 2; i++) {
     pixels.setPixelColor(i, pixels.Color(0, 0, intensity));
     pixels.show();

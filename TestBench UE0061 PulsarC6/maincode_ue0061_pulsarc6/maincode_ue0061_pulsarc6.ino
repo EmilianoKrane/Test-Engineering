@@ -1,5 +1,7 @@
 /*
 ue0061 firmware test main pulsar c6
+Este es el firmware que se flashea en la pulsar target para probar sus perifericos 
+o sea es el blink con el que se van flasheadas las tarjetas 
 */
 
 // ==== BIBLIOTECAS ====
@@ -11,6 +13,7 @@ ue0061 firmware test main pulsar c6
 #include <Adafruit_NeoPixel.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <HardwareSerial.h>
 #include "BLEDevice.h"
 #include "FS.h"
 #include "SD.h"
@@ -21,8 +24,8 @@ ue0061 firmware test main pulsar c6
 #define SCL_PIN 7   // >> GPIO07 Señal de reloj en protocolo I2C
 #define NEOP_PIN 8  // >> GPIO08 Activación de Neopixel
 
-#define D0_PIN D0
-#define D1_PIN D1
+#define RX2_PIN D0
+#define TX2_PIN D1
 #define D4_PIN 15
 #define D5_PIN 19
 #define D6_PIN 20
@@ -66,11 +69,11 @@ static BLERemoteCharacteristic *pRemoteCharacteristic;
 static BLEAdvertisedDevice *myDevice;
 
 // ==== CREACIÓN DE OBJETOS ====
+HardwareSerial PagWeb(1);
 StaticJsonDocument<200> receiveJSON;
 StaticJsonDocument<200> sendJSON;
 Adafruit_NeoPixel pixels(NUMPIXELS, NEOP_PIN, NEO_GRB + NEO_KHZ800);
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);  // Objeto de la OLED
-
 
 // Callback para detectar el Servidor durante el escaneo
 class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
@@ -89,8 +92,9 @@ void setup() {
   // ---- Inicializaciones ----
   Serial.begin(115200);
   delay(100);
+  PagWeb.begin(115200, SERIAL_8N1, RX2_PIN, TX2_PIN);
 
-  // ---- rutina de chequeo de bloques de comunicación ----
+  // ---- Rutina de chequeo de bloques de comunicación ----
   checkPulsar();  // Revisión de bloque i2c y spi
 
   // ---- Configuración de GPIOS Entrada/Salida ----
@@ -103,9 +107,9 @@ void setup() {
 
 void loop() {
 
-  if (Serial.available()) {
+  if (PagWeb.available()) {
 
-    JSON_entrada = Serial.readStringUntil('\n');
+    JSON_entrada = PagWeb.readStringUntil('\n');
     DeserializationError error = deserializeJson(receiveJSON, JSON_entrada);
 
     if (!error) {
@@ -115,16 +119,16 @@ void loop() {
       if (Function == "ping") opc = 1;             // {"Function":"ping"}
       else if (Function == "mac") opc = 2;         // {"Function":"mac"}
       else if (Function == "gpios_test") opc = 3;  // {"Function":"gpios_test"}
-      else if (Function == "sd_test") opc = 4;     // {"Function":"sd_test"}
-      else if (Function == "neop_test") opc = 5;   // {"Function":"neop_test"}
+                                                   // else if (Function == "sd_test") opc = 4;     // {"Function":"sd_test"}
+                                                   // else if (Function == "neop_test") opc = 5;   // {"Function":"neop_test"}
 
       switch (opc) {
         case 1:
           {
             sendJSON.clear();
             sendJSON["ping"] = "pong";
-            serializeJson(sendJSON, Serial);
-            Serial.println();
+            serializeJson(sendJSON, PagWeb);
+            PagWeb.println();
             break;
           }
 
@@ -133,8 +137,8 @@ void loop() {
             sendJSON.clear();
             String mac = WiFi.macAddress();
             sendJSON["mac"] = mac;
-            serializeJson(sendJSON, Serial);
-            Serial.println();
+            serializeJson(sendJSON, PagWeb);
+            PagWeb.println();
             break;
           }
 
@@ -151,7 +155,7 @@ void loop() {
               display.display();
             }
 
-            bool stateA = testGpios(D0_PIN, D1_PIN);
+            //bool stateA = testGpios(D0_PIN, D1_PIN);
             bool stateB = testGpios(D4_PIN, D5_PIN);
             bool stateC = testGpios(D6_PIN, D7_PIN);
             bool stateD = testGpios(D10_PIN, D12_PIN);
@@ -160,35 +164,30 @@ void loop() {
             bool stateG = testGpios(D17_PIN, D18_PIN);
             bool stateH = testGpios(D19_PIN, D21_PIN);
 
-            if (stateA && stateB && stateC && stateD && stateE && stateF && stateG && stateH) {
+            if (stateB && stateC && stateD && stateE && stateF && stateG && stateH) {
               sendJSON["gpios"] = true;
               sendJSON["Result"] = "OK";
             } else {
               sendJSON["gpios"] = false;
-              if (!stateA) sendJSON["D0,D1"] = "fail";
-              if (!stateB) sendJSON["D4,D5"] = "fail";
-              if (!stateC) sendJSON["D6,D7"] = "fail";
-              if (!stateD) sendJSON["D10,D12"] = "fail";
-              if (!stateE) sendJSON["D14,D20"] = "fail";
-              if (!stateF) sendJSON["D15,D16"] = "fail";
-              if (!stateG) sendJSON["D17,D18"] = "fail";
-              if (!stateH) sendJSON["D19,D21"] = "fail";
             }
 
-            if (stateA) sendJSON["D0,D1"] = "ok";
-            if (stateB) sendJSON["D4,D5"] = "ok";
-            if (stateC) sendJSON["D6,D7"] = "ok";
-            if (stateD) sendJSON["D10,D12"] = "ok";
-            if (stateE) sendJSON["D14,D20"] = "ok";
-            if (stateF) sendJSON["D15,D16"] = "ok";
-            if (stateG) sendJSON["D17,D18"] = "ok";
-            if (stateH) sendJSON["D19,D21"] = "ok";
+            sendJSON["D4,D5"] = stateB;
+            sendJSON["D6,D7"] = stateC;
+            sendJSON["D10,D12"] = stateD;
+            sendJSON["D14,D20"] = stateE;
+            sendJSON["D15,D16"] = stateF;
+            sendJSON["D17,D18"] = stateG;
+            sendJSON["D19,D21"] = stateH;
 
-            serializeJson(sendJSON, Serial);
-            Serial.println();
+            String mac = WiFi.macAddress();
+            sendJSON["mac"] = mac;
+
+            serializeJson(sendJSON, PagWeb);
+            PagWeb.println();
             break;
           }
 
+          /*
         case 4:
           {
             sendJSON.clear();
@@ -264,6 +263,7 @@ void loop() {
             pixels.clear();
             break;
           }
+          */
 
         default:
           {
@@ -407,7 +407,7 @@ void checkPulsar() {
   sendJSON["mac"] = mac;
 
   int steps = 0;
-  int attempts = 20;
+  int attempts = 10;
   WiFi.begin(ssid, password);
   Serial.print("Connecting to WiFi");
 
@@ -549,6 +549,13 @@ void serialDebug(String str) {
   sendJSON["debug"] = str;
   serializeJson(sendJSON, Serial);
   Serial.println();
+}
+
+void pagwebDebug(String str) {
+  sendJSON.clear();
+  sendJSON["debug"] = str;
+  serializeJson(sendJSON, PagWeb);
+  PagWeb.println();
 }
 
 bool testGpios(uint8_t gpioA, uint8_t gpioB) {
