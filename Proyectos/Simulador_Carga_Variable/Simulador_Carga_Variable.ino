@@ -26,19 +26,17 @@ void loop() {
     }
 
     String funcion = docIn["Funcion"] | "";
-    String start   = docIn["Start"]   | "";
+    String start = docIn["Start"] | "";
 
     if (funcion == "Other" && start == "Read") {
 
       // ===== Lecturas simuladas =====
-      float voltaje   = randomFloat(10, 11.5);
-      float corriente = 2.5;
-      float potencia  = voltaje * corriente;
+      float voltaje = randomFloat(2.8, 3.3);
+      float corriente = 0.5;
+      float potencia = voltaje * corriente;
 
       // ===== Formato solicitado =====
-      String medicion = String(voltaje, 2) + ";" +
-                        String(corriente, 2) + ";" +
-                        String(potencia, 2);
+      String medicion = String(voltaje, 2) + ";" + String(corriente, 2) + ";" + String(potencia, 2);
 
       docOut.clear();
       docOut["medicion"] = medicion;
@@ -48,5 +46,3 @@ void loop() {
     }
   }
 }
-
-

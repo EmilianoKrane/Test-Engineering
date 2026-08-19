@@ -15,7 +15,7 @@ Adafruit_NeoPixel pixels(NUMPIXELS, PIN1, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel matrix(NUMPIXELS, PIN2, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel neopixels(NUMPIXELS, PIN3, NEO_GRB + NEO_KHZ800);
 
-#define DELAYVAL 10  // Time (in milliseconds) to pause between pixels
+#define DELAYVAL 5  // Time (in milliseconds) to pause between pixels
 
 // Variables de intensidad
 int intensity = 5;         // 50=Bajo, 150=Medio, 255=Alto

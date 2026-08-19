@@ -145,6 +145,7 @@ void loop() {
         case 3:
           {
             sendJSON.clear();
+            sendJSON["Test"] = "GPIOs";
 
             if (status_OLED) {
               display.clearDisplay();
@@ -171,13 +172,13 @@ void loop() {
               sendJSON["gpios"] = false;
             }
 
-            sendJSON["D4,D5"] = stateB;
-            sendJSON["D6,D7"] = stateC;
-            sendJSON["D10,D12"] = stateD;
-            sendJSON["D14,D20"] = stateE;
-            sendJSON["D15,D16"] = stateF;
-            sendJSON["D17,D18"] = stateG;
-            sendJSON["D19,D21"] = stateH;
+            sendJSON["D4D5"] = stateB;
+            sendJSON["D6D7"] = stateC;
+            sendJSON["D10D12"] = stateD;
+            sendJSON["D14D20"] = stateE;
+            sendJSON["D15D16"] = stateF;
+            sendJSON["D17D18"] = stateG;
+            sendJSON["D19D21"] = stateH;
 
             String mac = WiFi.macAddress();
             sendJSON["mac"] = mac;
