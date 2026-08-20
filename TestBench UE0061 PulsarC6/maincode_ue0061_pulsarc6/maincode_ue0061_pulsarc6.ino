@@ -23,7 +23,7 @@ o sea es el blink con el que se van flasheadas las tarjetas
 #define SDA_PIN 6   // >> GPIO06 Señal de datos en protocolo I2C
 #define SCL_PIN 7   // >> GPIO07 Señal de reloj en protocolo I2C
 #define NEOP_PIN 8  // >> GPIO08 Activación de Neopixel
-
+#define BOOT_PIN 9
 #define RX2_PIN D0
 #define TX2_PIN D1
 #define D4_PIN 15
@@ -99,6 +99,7 @@ void setup() {
 
   // ---- Configuración de GPIOS Entrada/Salida ----
   pinMode(SDA_PIN, OUTPUT);
+  pinMode(BOOT_PIN, INPUT_PULLUP);
 
   // ---- Configuración del Neopixel ----
   pixels.clear();
@@ -597,41 +598,54 @@ bool i2cCheckDevice(uint8_t address) {
 void demo() {
   int delay_ms = 100;
   int neop = 1;
-  digitalWrite(SDA_PIN, HIGH);
-  delay(delay_ms);
 
-  // ---- Neopixel en Rojo ----
-  for (int i = 0; i < neop; i++) {
-    pixels.setPixelColor(i, pixels.Color(intensity, 0, 0));
-    pixels.show();
+  // Leemos el estado del botón en el pin 9.
+  if (digitalRead(BOOT_PIN) == LOW) {
+
+    // ---- Neopixel en Morado ----
+    for (int i = 0; i < neop; i++) {
+      // Mezcla de Rojo y Azul para hacer Morado
+      pixels.setPixelColor(i, pixels.Color(intensity, 0, intensity));
+      pixels.show();
+    }
+    delay(delay_ms);
+
+  } else {
+    // ---- Secuencia original si NO se presiona el botón ----
+    digitalWrite(SDA_PIN, HIGH);
+    delay(delay_ms);
+
+    // ---- Neopixel en Rojo ----
+    for (int i = 0; i < neop; i++) {
+      pixels.setPixelColor(i, pixels.Color(intensity, 0, 0));
+      pixels.show();
+      delay(delay_ms);
+    }
+
+    digitalWrite(SDA_PIN, LOW);
+    delay(delay_ms);
+
+    // ---- Neopixel en Verde ----
+    for (int i = 0; i < neop; i++) {
+      pixels.setPixelColor(i, pixels.Color(0, intensity, 0));
+      pixels.show();
+      delay(delay_ms);
+    }
+
+    digitalWrite(SDA_PIN, HIGH);
+    delay(delay_ms);
+
+    // ---- Neopixel en Azul----
+    for (int i = 0; i < neop; i++) {
+      pixels.setPixelColor(i, pixels.Color(0, 0, intensity));
+      pixels.show();
+      delay(delay_ms);
+    }
+
+    pixels.clear();
+    digitalWrite(SDA_PIN, LOW);
     delay(delay_ms);
   }
-
-  digitalWrite(SDA_PIN, LOW);
-  delay(delay_ms);
-
-  // ---- Neopixel en Verde ----
-
-  for (int i = 0; i < neop; i++) {
-    pixels.setPixelColor(i, pixels.Color(0, intensity, 0));
-    pixels.show();
-    delay(delay_ms);
-  }
-
-  digitalWrite(SDA_PIN, HIGH);
-  delay(delay_ms);
-
-  // ---- Neopixel en Azul----
-
-  for (int i = 0; i < neop; i++) {
-    pixels.setPixelColor(i, pixels.Color(0, 0, intensity));
-    pixels.show();
-    delay(delay_ms);
-  }
-
-  pixels.clear();
-  digitalWrite(SDA_PIN, LOW);
-  delay(delay_ms);
 }
 
 void listDir(fs::FS &fs, const char *dirname, uint8_t levels) {
