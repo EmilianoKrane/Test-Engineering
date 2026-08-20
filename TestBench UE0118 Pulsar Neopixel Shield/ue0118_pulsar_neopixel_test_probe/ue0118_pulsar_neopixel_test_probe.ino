@@ -13,13 +13,13 @@
 Adafruit_NeoPixel pixels(NUMPIXELS, PIN1, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel neopixels(NUMPIXELS, PIN2, NEO_GRB + NEO_KHZ800);
 
-#define DELAYVAL 50  // Time (in milliseconds) to pause between pixels
+#define DELAYVAL 20  // Time (in milliseconds) to pause between pixels
 
 // Dejamos una intensidad fija (puedes ajustarla de 0 a 255)
 int intensity = 3;
 
 // Variable para alternar la salida (0 = Arnés, 1 = Punta de Prueba)
-int salidaActiva = 0;
+int salidaActiva = 1;
 
 // Variables para evitar el "rebote" (debounce) del botón
 bool estadoBoton = HIGH;
@@ -101,7 +101,7 @@ void loop() {
       neopixels.setPixelColor(i, neopixels.Color(0, intensity, 0));
       neopixels.show();
     }
-    smartDelay(DELAYVAL);
+    //smartDelay(DELAYVAL);
   }
 
   // Color Rojo
@@ -113,7 +113,7 @@ void loop() {
       neopixels.setPixelColor(i, neopixels.Color(intensity, 0, 0));
       neopixels.show();
     }
-    smartDelay(DELAYVAL);
+    //smartDelay(DELAYVAL);
   }
 
   // Color Azul
@@ -125,6 +125,6 @@ void loop() {
       neopixels.setPixelColor(i, neopixels.Color(0, 0, intensity));
       neopixels.show();
     }
-    smartDelay(DELAYVAL);
+    //smartDelay(DELAYVAL);
   }
 }

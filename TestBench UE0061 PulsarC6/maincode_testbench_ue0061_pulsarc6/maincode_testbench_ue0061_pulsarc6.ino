@@ -21,6 +21,9 @@ se conecta al bus de pines GPIO01 y GPIO02 UARTL
 #define TX2 5         // GPIO como TXD
 #define SDA_PIN 6     // >> SDA para I2C con el esclavo - Línea de datos I2C
 #define SCL_PIN 7     // >> SCL para I2C con el esclavo - Línea de reloj I2C
+#define RELAYA 8      // En corto con GPIO09
+#define RELAYB 9      // Relevadores de Accionamiento de Fuente
+#define RELAY_PIN 20  // >> GPIO de Accionamiento de Rele de Alimentación
 
 #define RELAYA 8  // Relevadores de Accionamiento de Fuente
 #define RELAYB 9
@@ -105,9 +108,11 @@ void setup() {
   pinMode(RUN_BUTTON, INPUT);
   pinMode(RELAYA, OUTPUT);
   pinMode(RELAYB, OUTPUT);
+  pinMode(RELAY_PIN, OUTPUT);
 
   digitalWrite(RELAYA, LOW);
   digitalWrite(RELAYB, LOW);
+  digitalWrite(RELAY_PIN, HIGH);
 }
 
 void loop() {
@@ -171,13 +176,13 @@ void loop() {
 
         case 4:
           {
-            digitalWrite(RELAYA, LOW);
+            digitalWrite(RELAY_PIN, HIGH);
             break;
           }
 
         case 5:
           {
-            digitalWrite(RELAYA, HIGH);
+            digitalWrite(RELAY_PIN, LOW);
             break;
           }
 
