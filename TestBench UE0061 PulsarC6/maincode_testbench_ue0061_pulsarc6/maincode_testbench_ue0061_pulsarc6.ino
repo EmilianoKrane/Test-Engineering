@@ -103,7 +103,6 @@ void setup() {
   }
   serialDebug("Test Pulsar C6 Ready...");
 
-
   // ---- Definición de entradas y salidas ----
   pinMode(RUN_BUTTON, INPUT);
   pinMode(RELAYA, OUTPUT);

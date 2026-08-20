@@ -18,6 +18,7 @@ o sea es el blink con el que se van flasheadas las tarjetas
 #include "FS.h"
 #include "SD.h"
 #include "SPI.h"
+#include "esp_system.h"  // Incluir la librería del sistema de Espressif
 
 // ==== DECLARACIÓN DE GPIOS ====
 #define SDA_PIN 6   // >> GPIO06 Señal de datos en protocolo I2C
@@ -94,8 +95,18 @@ void setup() {
   delay(100);
   PagWeb.begin(115200, SERIAL_8N1, RX2_PIN, TX2_PIN);
 
-  // ---- Rutina de chequeo de bloques de comunicación ----
-  checkPulsar();  // Revisión de bloque i2c y spi
+  // Obtenemos la causa del reinicio
+  esp_reset_reason_t reason = esp_reset_reason();
+
+  // Evaluamos la causa
+  if (reason == ESP_RST_POWERON) {
+    Serial.println("Inicio por energia o boton de RESET (CHIP_EN)");
+    //checkPulsar();  // Revisión de bloque i2c y spi
+  } else if (reason == ESP_RST_SW) {
+    Serial.println("Reinicio por software (ESP.restart)");
+  } else if (reason == ESP_RST_PANIC) {
+    Serial.println("Reinicio por excepcion/crasheo de software");
+  }
 
   // ---- Configuración de GPIOS Entrada/Salida ----
   pinMode(SDA_PIN, OUTPUT);
@@ -104,6 +115,9 @@ void setup() {
   // ---- Configuración del Neopixel ----
   pixels.clear();
   pixels.setBrightness(150);
+
+  // ---- Bienvenida al usuario ----
+  mensajeBienvenida();
 }
 
 void loop() {
@@ -283,6 +297,19 @@ void loop() {
   }
 }
 
+void mensajeBienvenida() {
+  Serial.println("\n");
+  Serial.println("********************************************************");
+  Serial.println("*                                                      *");
+  Serial.println("*        🚀 ¡HOLA! BIENVENIDO A TU PULSAR C6 🚀        *");
+  Serial.println("*                                                      *");
+  Serial.println("********************************************************");
+  Serial.println("*  Tu nueva placa de desarrollo esta lista para usar.  *");
+  Serial.println("*  Esperamos que la disfrutes al maximo.               *");
+  Serial.println("********************************************************");
+  Serial.println("\n> Iniciando sistema...");
+  delay(1000);  // Pequeña pausa para que el usuario alcance a leerlo
+}
 
 void checkPulsar() {
   sendJSON.clear();
@@ -609,6 +636,8 @@ void demo() {
       pixels.show();
     }
     delay(delay_ms);
+
+    checkPulsar();  // Revisión de bloque i2c y spi
 
   } else {
     // ---- Secuencia original si NO se presiona el botón ----
