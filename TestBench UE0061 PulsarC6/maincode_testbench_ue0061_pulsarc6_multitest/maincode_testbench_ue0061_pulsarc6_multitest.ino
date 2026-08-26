@@ -1,6 +1,6 @@
 
 /* 
-Firmware testbench para pulsarc6
+Firmware testbench para pulsarc6 para probar con la interfaz de multi pruebas 5 modulos por accionamiento 
 Est firmware funciona como puente entre la interfaz de pruebas y el target pulsar c6, enviando los comando JSON
 que requiere el target para accionar cad uno de sus perifericos. 
 
@@ -85,16 +85,15 @@ float current_in() {
 
 void setup() {
 
-  Serial.begin(115200);  // Serial enlaza la PagWeb DIS 4800 || VSV 115200
-  Serial.setTimeout(200);
-  delay(100);
+  Serial.begin(115200);                      // Serial enlaza la PagWeb DIS 4800 || VSV 115200
   UART.begin(115200, SERIAL_8N1, RX2, TX2);  // Bus de comunicación con el CH552
-  //serialDebug("Test Pulsar C6 Initialized...");
+  delay(200);
+  serialDebug("Test Pulsar C6 Initialized...");
 
   Wire.begin(SDA_PIN, SCL_PIN);  // Iniciar I2C como maestro
-  //serialDebug("I2C inicializado en SDA: " + String(SDA_PIN) + " SCL: " + String(SCL_PIN));
+  serialDebug("I2C inicializado en SDA: " + String(SDA_PIN) + " SCL: " + String(SCL_PIN));
 
-
+  delay(200);
   if (!ina219_in.begin(&Wire)) {
     serialDebug("Current sensor INA219_out 0x40 no initilized...");
     while (1) {
@@ -105,7 +104,7 @@ void setup() {
   serialDebug("Test Pulsar C6 Ready...");
 
   // ---- Definición de entradas y salidas ----
-  pinMode(RUN_BUTTON, INPUT_PULLDOWN);
+  pinMode(RUN_BUTTON, INPUT);
   pinMode(RELAYA, OUTPUT);
   pinMode(RELAYB, OUTPUT);
   pinMode(RELAY_PIN, OUTPUT);
@@ -145,20 +144,8 @@ void loop() {
       else if (Function == "relayON") opc = 4;        // {"Function":"relayON"}
       else if (Function == "relayOFF") opc = 5;       // {"Function":"relayOFF"}
       else if (Function == "currentSensor") opc = 6;  // {"Function":"currentSensor"}
-      else if (Function == "powerON") opc = 7;        // {"Function":"powerON"}
-      else if (Function == "powerOFF") opc = 8;       // {"Function":"powerOFF"}
-      else if (Function == "hi") opc = 9;             // {"Function":"hi"}
 
       switch (opc) {
-        case 9:
-          {
-            sendJSON.clear();  // Limpia cualquier dato previo
-            sendJSON["debug"] = "hola mundo";
-            serializeJson(sendJSON, Serial);  // Envío de datos por JSON a la PagWeb
-            Serial.println();
-            break;
-          }
-
         case 1:
           {
             sendJSON.clear();  // Limpia cualquier dato previo
@@ -204,7 +191,7 @@ void loop() {
             float minCurrent = 0.150;
             float maxCurrent = 0.250;
             delay(50);
-            float corrienteSensor = abs(current_in());
+            float corrienteSensor = current_in();
             sendJSON["current"] = corrienteSensor;
             if (corrienteSensor > minCurrent && corrienteSensor < maxCurrent) sendJSON["Result"] = "OK";
             serializeJson(sendJSON, Serial);
@@ -212,19 +199,7 @@ void loop() {
             break;
           }
 
-        case 7:
-          {
-            digitalWrite(RELAYB, LOW);
-            digitalWrite(RELAYA, LOW);
-            break;
-          }
 
-        case 8:
-          {
-            digitalWrite(RELAYB, HIGH);
-            digitalWrite(RELAYA, HIGH);
-            break;
-          }
 
 
         default:

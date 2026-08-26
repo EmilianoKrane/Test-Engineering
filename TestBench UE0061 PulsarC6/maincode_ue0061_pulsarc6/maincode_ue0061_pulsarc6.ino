@@ -150,6 +150,7 @@ void loop() {
         case 2:
           {
             sendJSON.clear();
+            WiFi.mode(WIFI_MODE_STA);
             String mac = WiFi.macAddress();
             sendJSON["mac"] = mac;
             serializeJson(sendJSON, PagWeb);
@@ -195,6 +196,7 @@ void loop() {
             sendJSON["D17D18"] = stateG;
             sendJSON["D19D21"] = stateH;
 
+            WiFi.mode(WIFI_MODE_STA);
             String mac = WiFi.macAddress();
             sendJSON["mac"] = mac;
 

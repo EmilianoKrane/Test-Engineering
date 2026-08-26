@@ -12,8 +12,8 @@
 static const int kSampleRate = 8000;
 static const int kChannels = 1;
 static const size_t kSampleBufferCount = 256;
-static const int kPdmDinPin = 4;
-static const int kPdmClkPin = 5;
+static const int kPdmDinPin = 11;
+static const int kPdmClkPin = 10;
 
 static int16_t sampleBuffer[kSampleBufferCount];
 static volatile size_t samplesRead = 0;
