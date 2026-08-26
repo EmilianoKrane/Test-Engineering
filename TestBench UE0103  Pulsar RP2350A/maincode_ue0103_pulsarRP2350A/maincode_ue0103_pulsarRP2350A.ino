@@ -20,6 +20,8 @@ DVHSTX16 display(pinConfig, DVHSTX_RESOLUTION_320x240);
 // ============ CONFIGURACIÓN BMI270 ============
 BMI270 imu;
 uint8_t i2cAddress = BMI2_I2C_PRIM_ADDR + 1;  // 0x69
+#define SDA_PIN 8                             // >> GPIO08 SDA I2C Conectado a IMU BMI270
+#define SCL_PIN 9                             // >> GPIO09 SCL I2C Conectado a IMU BMI270
 
 // ============ CONFIGURACIÓN MICRO SD ============
 #define SD_MOSI_PIN 3  // SDIO_CMD
@@ -54,6 +56,7 @@ int audioHistoryIndex = 0;
 // ============ CONFIGURACIÓN PINES DE LEDS ============
 #define WS_PIN 1        // >> GPIO DE NEOPIXEL
 #define LED_BUILTIN 22  // >> LED BUILTIN
+#define BUTTON_PIN 24   // >> PIN DE ENTRADA CON BOTONERA EN QWIIC
 
 // ============ VARIABLES DEL CUBO 3D ============
 float vertices[8][3] = {
@@ -158,6 +161,7 @@ void setup() {
 
   // ============ ASIGNACIÓN DE ENTRADAS Y SALIDAS ============
   pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(BUTTON_PIN, INPUT_PULLDOWN);
 
   // ============ INICIALIZACIÓN HDMI ============
   Serial.print("1. Inicializando Display HDMI... ");
@@ -175,8 +179,8 @@ void setup() {
   display.setTextColor(0x07FF);
 
   // ============ INICIALIZACIÓN IMU BMI270 ============
-  Wire.setSDA(8);
-  Wire.setSCL(9);
+  Wire.setSDA(SDA_PIN);
+  Wire.setSCL(SCL_PIN);
   Wire.begin();
   delay(100);
   Serial.println("OK");
@@ -275,7 +279,6 @@ void setup() {
 }
 
 void loop() {
-
   // ============ ACTUALIZAR ÁNGULOS (siempre) ============
   if (imuControl) {
     // Modo IMU: Leer sensor
@@ -473,7 +476,16 @@ void loop() {
 
   yield();    // Dar tiempo al sistema
   delay(50);  // Aumentado a 50ms para reducir más la carga
+}
 
+// ============ CORE 1: COMUNICACIÓN SERIAL ============
+
+void setup1() {
+  // Este setup corre en el núcleo 1.
+  // No necesitas poner nada aquí por ahora, pero la función debe existir.
+}
+
+void loop1() {
 
   if (PagWeb.available()) {
 
@@ -588,7 +600,10 @@ void loop() {
   } else {
     demo();
   }
+
+  delay(1);  // Pequeño respiro de 1ms para el núcleo 1
 }
+
 
 void mensajeBienvenida() {
   delay(1000);  // Pequeña pausa para que el usuario alcance a leerlo
@@ -904,3 +919,6 @@ bool testPSRAM() {
   return true;
 }
 #endif
+
+
+
