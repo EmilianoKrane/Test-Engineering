@@ -129,18 +129,6 @@ void onPdmData() {
   const int bytesRead = PDM.read((void*)sampleBuffer, bytesToRead);
   if (bytesRead > 0) {
     samplesRead = (size_t)bytesRead / sizeof(sampleBuffer[0]);
-
-    // Calcular RMS rápido (cada 10 muestras para ahorrar CPU)
-    int32_t sum = 0;
-    for (size_t i = 0; i < samplesRead; i += 10) {
-      int32_t sample = sampleBuffer[i];
-      sum += sample * sample;
-    }
-    audioLevelRMS = (int)sqrt(sum / (samplesRead / 10));
-
-    // Guardar en historial para la gráfica
-    audioHistory[audioHistoryIndex] = audioLevelRMS;
-    audioHistoryIndex = (audioHistoryIndex + 1) % AUDIO_HISTORY_SIZE;
   }
 }
 
@@ -154,132 +142,60 @@ void pagwebDebug(String cmd) {
 
 void setup() {
   Serial.begin(115200);
-  delay(50);
-  PagWeb.begin(115200);
-  delay(1000);
-  mensajeBienvenida();
 
-  // ============ ASIGNACIÓN DE ENTRADAS Y SALIDAS ============
-  pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(BUTTON_PIN, INPUT_PULLDOWN);
+  // Puedes dejar los Serial.println del setup porque ocurren
+  // ANTES de que empiece la transmisión binaria constante.
+  Serial.println("Iniciando PULSAR RP2350A...");
 
-  // ============ INICIALIZACIÓN HDMI ============
-  Serial.print("1. Inicializando Display HDMI... ");
-  if (!display.begin()) {
-    Serial.println("ERROR!");
-    pinMode(LED_BUILTIN, OUTPUT);
-    while (true) digitalWrite(LED_BUILTIN, (millis() / 500) & 1);
-  }
-  centerX = display.width() / 2;
-  centerY = display.height() / 2;
-
-  display.fillScreen(0x0000);
-  display.setTextSize(1);
-  display.setCursor(10, 10);
-  display.setTextColor(0x07FF);
-
-  // ============ INICIALIZACIÓN IMU BMI270 ============
-  Wire.setSDA(SDA_PIN);
-  Wire.setSCL(SCL_PIN);
-  Wire.begin();
-  delay(100);
-  Serial.println("OK");
-  if (imu.beginI2C(i2cAddress) != BMI2_OK) {
-    Serial.println("NO DETECTADO (modo auto)");
-    imuControl = false;
-  } else {
-    Serial.println("BMI270 OK");
-    imuControl = true;
-  }
-
-  // ============ PASO 3: Inicializar SPI para MicroSD ============
-  Serial.print("4. Inicializando SPI para SD... ");
-  SPI.setRX(SD_MISO_PIN);
-  SPI.setTX(SD_MOSI_PIN);
-  SPI.setSCK(SD_SCK_PIN);
-  SPI.begin();
-  Serial.println("OK");
-
-  Serial.print("5. Inicializando MicroSD (CS=7)... ");
-  SDFSConfig cfg;
-  cfg.setCSPin(SD_CS_PIN);
-  cfg.setSPI(SPI);
-
-  if (!SDFS.setConfig(cfg) || !SDFS.begin()) {
-    Serial.println("NO DISPONIBLE");
-    sdAvailable = false;
-  } else {
-    Serial.println("OK");
-    sdAvailable = true;
-    //countFiles();
-    //createLogFile();
-  }
-
-  // ============ PASO 6: Verificar PSRAM ============
-  Serial.print("6. Verificando PSRAM... ");
-
-#if defined(RP2350_PSRAM_CS)
-  psramSizeMB = rp2040.getPSRAMSize() / (1024 * 1024);
-  if (psramSizeMB > 0) {
-    psramFreeKB = rp2040.getFreePSRAMHeap() / 1024;
-    psramAvailable = true;
-    Serial.print("OK (");
-    Serial.print(psramSizeMB);
-    Serial.print(" MB, ");
-    Serial.print(psramFreeKB);
-    Serial.println(" KB free)");
-
-    // Test inicial rápido (deshabilitado por defecto)
-    // if (testPSRAM()) {
-    //   psramTestsPassed++;
-    //   Serial.println("   Test inicial: PASS");
-    // }
-    Serial.println("   Tests PSRAM: DESHABILITADOS (ahorra RAM)");
-  } else {
-    Serial.println("NO DISPONIBLE");
-    psramAvailable = false;
-  }
-#else
-  Serial.println("NO CONFIGURADO (define RP2350_PSRAM_CS)");
-  psramAvailable = false;
-#endif
-
-  // ============ PASO 7: Inicializar PDM Microphone ============
-  Serial.print("7. Inicializando PDM Microphone... ");
-
-  // Inicializar historial de audio en cero
-  for (int i = 0; i < AUDIO_HISTORY_SIZE; i++) {
-    audioHistory[i] = 0;
-  }
-
+  // ============ INICIALIZACIÓN PDM ============
   PDM.setDIN(kPdmDinPin);
   PDM.setCLK(kPdmClkPin);
   PDM.onReceive(onPdmData);
   PDM.setBufferSize(sizeof(sampleBuffer));
 
   if (!PDM.begin(kChannels, kSampleRate)) {
-    Serial.println("NO DISPONIBLE");
-    pdmAvailable = false;
-  } else {
-    Serial.print("OK (");
-    Serial.print(kSampleRate);
-    Serial.println(" Hz, GPIO10/11)");
-    pdmAvailable = true;
+    Serial.println("Error: PDM microphone");
   }
 
-  Serial.println("\n========================================");
-  Serial.println("Sistema listo!");
+  // ============ INICIALIZACIÓN HDMI ============
+  if (!display.begin()) {
+    Serial.println("Error: Display HDMI");
+  }
+  centerX = display.width() / 2;
+  centerY = display.height() / 2;
+  display.fillScreen(0x0000);
 
+  // ============ INICIALIZACIÓN IMU ============
+  Wire.setSDA(8);
+  Wire.setSCL(9);
+  Wire.begin();
+  if (imu.beginI2C(i2cAddress) == BMI2_OK) {
+    imuControl = true;
+  } else {
+    imuControl = false;
+  }
 
-  // ============ DEBUG ============
-  pagwebDebug("¡Test PULSAR RP2350A Ready!");
-  pixels.begin();
-  pixels.clear();
-  pixels.show();
+  Serial.println("Setup Core 0 completado. Iniciando stream de audio...");
 }
 
 void loop() {
-  // ============ ACTUALIZAR ÁNGULOS (siempre) ============
+  // 1. TRANSMISIÓN DE AUDIO (Prioridad Alta)
+  // Revisa si hay muestras listas y las envía inmediatamente
+  if (samplesRead > 0) {
+    noInterrupts();
+    size_t localCount = samplesRead;
+    samplesRead = 0;
+    interrupts();
+
+    if (localCount > kSampleBufferCount) {
+      localCount = kSampleBufferCount;
+    }
+
+    // Enviar TODO el buffer en binario
+    Serial.write((uint8_t*)sampleBuffer, localCount * sizeof(int16_t));
+  }
+
+  // 2. LECTURA DEL SENSOR IMU
   if (imuControl) {
     // Modo IMU: Leer sensor
     imu.getSensorData();
@@ -303,12 +219,13 @@ void loop() {
     if (angleZ >= 360) angleZ -= 360;
   }
 
-  // ============ ACTUALIZAR DISPLAY (solo cada 100ms para aliviar carga) ============
+  // 3. ACTUALIZACIÓN DE PANTALLA HDMI (No bloqueante)
   if (millis() - lastDisplayUpdate >= displayUpdateInterval) {
-    // Borrar solo el área central del cubo (mucho más pequeña)
-    display.fillRect(60, 60, 200, 120, 0x0000);  // Área reducida
 
-    // ============ DIBUJAR CUBO ============
+    // Limpiamos el área del cubo
+    display.fillRect(60, 60, 200, 120, 0x0000);
+
+    // Dibujar cubo 3D (usará anguloX, anguloY, anguloZ)
     drawCube();
 
     // ============ MOSTRAR INFO SUPERIOR ============
@@ -422,67 +339,12 @@ void loop() {
     }
 
     lastDisplayUpdate = millis();
-  }  // Fin de actualización del display
-
-  // ============ LOG A SD (cada 5 seg) ============
-  if (sdAvailable && (millis() - lastLogTime > logInterval)) {
-    logDataToSD();
-    lastLogTime = millis();
-    yield();  // Prevenir watchdog timeout
   }
-
-  // ============ TEST PSRAM (solo si está habilitado) ============
-#if defined(RP2350_PSRAM_CS)
-  if (enablePSRAMTests && psramAvailable && (millis() - lastPSRAMTest > psramTestInterval)) {
-    if (testPSRAM()) {
-      psramTestsPassed++;
-      Serial.print("PSRAM test #");
-      Serial.print(psramTestsPassed);
-      Serial.println(": PASS");
-    }
-    lastPSRAMTest = millis();
-    yield();  // Prevenir watchdog timeout
-  }
-#endif
-
-  // ============ HEARTBEAT LED ============
-  frameCount++;
-  if (millis() - lastHeartbeat > 1000) {
-    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
-    lastHeartbeat = millis();
-
-    // Monitorear heap memory
-    int freeHeap = rp2040.getFreeHeap();
-
-    // Log estadísticas cada segundo
-    Serial.print("F:");
-    Serial.print(frameCount);
-    Serial.print(" | Up:");
-    Serial.print(millis() / 1000);
-    Serial.print("s | Heap:");
-    Serial.print(freeHeap / 1024);
-    Serial.print("KB");
-
-    // Advertencia si hay pérdida de memoria
-    if (lastFreeHeap > 0 && freeHeap < lastFreeHeap - 1024) {
-      Serial.print(" | WARN: -");
-      Serial.print((lastFreeHeap - freeHeap) / 1024);
-      Serial.print("KB!");
-    }
-    Serial.println();
-
-    lastFreeHeap = freeHeap;
-  }
-
-  yield();    // Dar tiempo al sistema
-  delay(50);  // Aumentado a 50ms para reducir más la carga
 }
-
 // ============ CORE 1: COMUNICACIÓN SERIAL ============
 
 void setup1() {
-  // Este setup corre en el núcleo 1.
-  // No necesitas poner nada aquí por ahora, pero la función debe existir.
+  PagWeb.begin(115200);
 }
 
 void loop1() {
@@ -494,11 +356,11 @@ void loop1() {
     if (!error) {
       String Function = receiveJSON["Function"];
       int opc = 0;
-      if (Function == "ping") opc = 1;          // {"Function":"ping"}
-      else if (Function == "uid") opc = 2;      // {"Function":"uid"}
-      else if (Function == "ram") opc = 3;      // {"Function":"ram"}
-      else if (Function == "psram") opc = 4;    // {"Function":"psram"}
-      else if (Function == "sd_test") opc = 5;  // {"Function":"sd_test"}
+      if (Function == "ping") opc = 1;      //c
+      else if (Function == "uid") opc = 2;  // {"Function":"uid"}
+      else if (Function == "ram") opc = 3;  // {"Function":"ram"}
+      else if (Function == "pd") opc = 4;   // {"Function":"pd"}
+
 
       switch (opc) {
         case 1:
@@ -546,45 +408,31 @@ void loop1() {
 
         case 4:
           {
-            sendJSON.clear();
+            for (int i = 0; i < 10; i++) {
+              if (samplesRead == 0) {
+                delay(1);
+                return;
+              }
 
-            Serial.print(">> Verificando PSRAM... ");
-#if defined(RP2350_PSRAM_CS)
-            psramSizeMB = rp2040.getPSRAMSize() / (1024 * 1024);
-            Serial.println("Tamaño de la PSRAM " + String(psramSizeMB));
-            if (psramSizeMB > 7) {
-              psramFreeKB = rp2040.getFreePSRAMHeap() / 1024;
-              psramAvailable = true;
-              Serial.print("OK");
-              Serial.print(psramSizeMB);
-              Serial.print(" MB, ");
-              Serial.print(psramFreeKB);
-              Serial.println(" KB free");
+              noInterrupts();
+              size_t localCount = samplesRead;
+              samplesRead = 0;
+              interrupts();
 
-              String psram = String(psramFreeKB) + " KB";
-              sendJSON["Result"] = "OK";
-              sendJSON["psram"] = psram;
-              serializeJson(sendJSON, PagWeb);
-              PagWeb.println();
-              // Test inicial rápido (deshabilitado por defecto)
-              // if (testPSRAM()) {
-              //   psramTestsPassed++;
-              //   Serial.println("   Test inicial: PASS");
-              // }
-            } else {
-              Serial.println("NO DISPONIBLE");
-              psramAvailable = false;
-              sendJSON["Result"] = "FAIL";
-              serializeJson(sendJSON, PagWeb);
-              PagWeb.println();
+              if (localCount > kSampleBufferCount) {
+                localCount = kSampleBufferCount;
+              }
+
+              // Enviar TODO el buffer en binario de una sola vez
+              // en lugar de usar un for y Serial.println()
+              Serial.write((uint8_t*)sampleBuffer, localCount * sizeof(int16_t));
+              delay(500);
             }
-#else
-            Serial.println("NO CONFIGURADO (define RP2350_PSRAM_CS)");
-            psramAvailable = false;
-#endif
 
             break;
           }
+
+
 
         default:
           {
@@ -919,6 +767,3 @@ bool testPSRAM() {
   return true;
 }
 #endif
-
-
-
