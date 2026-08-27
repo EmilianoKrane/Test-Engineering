@@ -155,9 +155,6 @@ void pagwebDebug(String cmd) {
 
 void setup() {
   Serial.begin(115200);
-
-  // Puedes dejar los Serial.println del setup porque ocurren
-  // ANTES de que empiece la transmisión binaria constante.
   Serial.println("Iniciando PULSAR RP2350A...");
 
   // ============ INICIALIZACIÓN PDM ============
@@ -187,6 +184,34 @@ void setup() {
     imuControl = true;
   } else {
     imuControl = false;
+  }
+
+  // ============ INICIALIZACIÓN PSRAM ============
+#if defined(RP2350_PSRAM_CS)
+  psramSizeMB = rp2040.getPSRAMSize() / (1024 * 1024);
+  if (psramSizeMB > 0) {
+    psramFreeKB = rp2040.getFreePSRAMHeap() / 1024;
+    psramAvailable = true;
+  } else {
+    psramAvailable = false;
+  }
+#else
+  psramAvailable = false;
+#endif
+
+  // ============ INICIALIZACIÓN SPI para MicroSD ============
+  SPI.setRX(SD_MISO_PIN);
+  SPI.setTX(SD_MOSI_PIN);
+  SPI.setSCK(SD_SCK_PIN);
+  SPI.begin();
+  SDFSConfig cfg;
+  cfg.setCSPin(SD_CS_PIN);
+  cfg.setSPI(SPI);
+
+  if (!SDFS.setConfig(cfg) || !SDFS.begin()) {
+    sdAvailable = false;
+  } else {
+    sdAvailable = true;
   }
 
   Serial.println("Setup Core 0 completado. Iniciando stream de audio...");
@@ -381,10 +406,11 @@ void loop1() {
     if (!error) {
       String Function = receiveJSON["Function"];
       int opc = 0;
-      if (Function == "ping") opc = 1;      //c
-      else if (Function == "uid") opc = 2;  // {"Function":"uid"}
-      else if (Function == "ram") opc = 3;  // {"Function":"ram"}
-      else if (Function == "pd") opc = 4;   // {"Function":"pd"}
+      if (Function == "ping") opc = 1;          // {"Function":"ping"}
+      else if (Function == "uid") opc = 2;      // {"Function":"uid"}
+      else if (Function == "ram") opc = 3;      // {"Function":"ram"}
+      else if (Function == "pd_mic") opc = 4;   // {"Function":"pd_mic"}
+      else if (Function == "testAll") opc = 5;  // {"Function":"testAll"}
 
 
       switch (opc) {
@@ -433,29 +459,25 @@ void loop1() {
 
         case 4:
           {
-            for (int i = 0; i < 10; i++) {
-              if (samplesRead == 0) {
-                delay(1);
-                return;
-              }
-
-              noInterrupts();
-              size_t localCount = samplesRead;
-              samplesRead = 0;
-              interrupts();
-
-              if (localCount > kSampleBufferCount) {
-                localCount = kSampleBufferCount;
-              }
-
-              // Enviar TODO el buffer en binario de una sola vez
-              // en lugar de usar un for y Serial.println()
-              Serial.write((uint8_t*)sampleBuffer, localCount * sizeof(int16_t));
-              delay(500);
-            }
+            sendJSON.clear();
 
             break;
           }
+
+        case 5:
+          {
+            sendJSON.clear();
+            sendJSON["i2c"] = imuControl;
+            sendJSON["spi"] = sdAvailable;
+            sendJSON["psram"] = psramAvailable;
+            sendJSON["psram_size"] = String(psramSizeMB) + " MB";
+
+            serializeJson(sendJSON, PagWeb);
+            PagWeb.println();
+            break;
+          }
+
+
 
 
 
