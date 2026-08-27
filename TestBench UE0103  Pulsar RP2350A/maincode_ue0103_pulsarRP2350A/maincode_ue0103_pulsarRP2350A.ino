@@ -99,7 +99,7 @@ bool enablePSRAMTests = false;  // Deshabilitar tests por defecto para ahorrar R
 unsigned long frameCount = 0;
 unsigned long lastHeartbeat = 0;
 unsigned long lastDisplayUpdate = 0;
-unsigned long displayUpdateInterval = 100;  // Actualizar display cada 100ms (10 FPS)
+unsigned long displayUpdateInterval = 200;  // Actualizar display cada 100ms (10 FPS)
 int lastFreeHeap = 0;
 
 // ==== DECLARACIÓN DE VARIABLES GLOBALES y MACROS ====
@@ -129,6 +129,19 @@ void onPdmData() {
   const int bytesRead = PDM.read((void*)sampleBuffer, bytesToRead);
   if (bytesRead > 0) {
     samplesRead = (size_t)bytesRead / sizeof(sampleBuffer[0]);
+
+
+    // Calcular RMS rápido (cada 10 muestras para ahorrar CPU)
+    int32_t sum = 0;
+    for (size_t i = 0; i < samplesRead; i += 10) {
+      int32_t sample = sampleBuffer[i];
+      sum += sample * sample;
+    }
+    audioLevelRMS = (int)sqrt(sum / (samplesRead / 10));
+
+    // Guardar en historial para la gráfica
+    audioHistory[audioHistoryIndex] = audioLevelRMS;
+    audioHistoryIndex = (audioHistoryIndex + 1) % AUDIO_HISTORY_SIZE;
   }
 }
 
@@ -155,7 +168,8 @@ void setup() {
 
   if (!PDM.begin(kChannels, kSampleRate)) {
     Serial.println("Error: PDM microphone");
-  }
+    pdmAvailable = false;
+  } else pdmAvailable = true;
 
   // ============ INICIALIZACIÓN HDMI ============
   if (!display.begin()) {
@@ -180,20 +194,6 @@ void setup() {
 
 void loop() {
   // 1. TRANSMISIÓN DE AUDIO (Prioridad Alta)
-  // Revisa si hay muestras listas y las envía inmediatamente
-  if (samplesRead > 0) {
-    noInterrupts();
-    size_t localCount = samplesRead;
-    samplesRead = 0;
-    interrupts();
-
-    if (localCount > kSampleBufferCount) {
-      localCount = kSampleBufferCount;
-    }
-
-    // Enviar TODO el buffer en binario
-    Serial.write((uint8_t*)sampleBuffer, localCount * sizeof(int16_t));
-  }
 
   // 2. LECTURA DEL SENSOR IMU
   if (imuControl) {
@@ -340,11 +340,28 @@ void loop() {
 
     lastDisplayUpdate = millis();
   }
+
+
+  // ===== TRANSMISIÓN DE DATOS DE PD =====
+  if (samplesRead > 0) {
+    noInterrupts();
+    size_t localCount = samplesRead;
+    samplesRead = 0;
+    interrupts();
+
+    if (localCount > kSampleBufferCount) {
+      localCount = kSampleBufferCount;
+    }
+
+    // Enviar TODO el buffer en binario
+    Serial.write((uint8_t*)sampleBuffer, localCount * sizeof(int16_t));
+  }
 }
 // ============ CORE 1: COMUNICACIÓN SERIAL ============
 
 void setup1() {
   PagWeb.begin(115200);
+  pagwebDebug("Pulsar RP2350 Ready! :D");
 }
 
 void loop1() {
@@ -678,68 +695,7 @@ void countFiles() {
   yield();
 }
 
-void createLogFile() {
-  Serial.println("--- Creando archivo de log ---");
 
-  File logFile = SDFS.open("/imu_log.csv", "w");
-  if (logFile) {
-    logFile.println("timestamp,gyroX,gyroY,gyroZ,accelX,accelY,accelZ");
-    logFile.close();
-    Serial.println("Archivo imu_log.csv creado");
-  } else {
-    Serial.println("Error creando archivo log");
-  }
-
-  // Crear archivo de audio si PDM está disponible
-  if (pdmAvailable) {
-    File audioFile = SDFS.open("/audio_log.csv", "w");
-    if (audioFile) {
-      audioFile.println("timestamp,rms_level");
-      audioFile.close();
-      Serial.println("Archivo audio_log.csv creado");
-    }
-  }
-}
-
-void logDataToSD() {
-  // Log IMU data si está activo
-  if (imuControl) {
-    File logFile = SDFS.open("/imu_log.csv", "a");
-    if (logFile) {
-      logFile.print(millis());
-      logFile.print(",");
-      logFile.print(imu.data.gyroX);
-      logFile.print(",");
-      logFile.print(imu.data.gyroY);
-      logFile.print(",");
-      logFile.print(imu.data.gyroZ);
-      logFile.print(",");
-      logFile.print(imu.data.accelX);
-      logFile.print(",");
-      logFile.print(imu.data.accelY);
-      logFile.print(",");
-      logFile.println(imu.data.accelZ);
-      logFile.flush();
-      logFile.close();
-      Serial.print(".");  // Indicador visual
-    }
-  }
-
-  // Log audio data si PDM está disponible
-  if (pdmAvailable && audioLevelRMS > 0) {
-    File audioFile = SDFS.open("/audio_log.csv", "a");
-    if (audioFile) {
-      audioFile.print(millis());
-      audioFile.print(",");
-      audioFile.println(audioLevelRMS);
-      audioFile.flush();
-      audioFile.close();
-      Serial.print("a");  // Indicador de audio
-    }
-  }
-
-  yield();  // Dar tiempo al sistema después de SD
-}
 
 // ============ FUNCIONES PSRAM ============
 #if defined(RP2350_PSRAM_CS)
