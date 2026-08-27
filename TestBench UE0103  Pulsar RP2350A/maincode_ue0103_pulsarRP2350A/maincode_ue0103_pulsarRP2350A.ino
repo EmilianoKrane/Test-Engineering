@@ -200,9 +200,17 @@ void loop() {
     // Modo IMU: Leer sensor
     imu.getSensorData();
 
-    angleX += imu.data.gyroX * 0.3;
-    angleY += imu.data.gyroY * 0.3;
-    angleZ += imu.data.gyroZ * 0.3;
+    float umbralRuido = 3.0;
+
+    if (abs(imu.data.gyroX) > umbralRuido) {
+      angleX += imu.data.gyroX * 0.3;
+    }
+    if (abs(imu.data.gyroY) > umbralRuido) {
+      angleY += imu.data.gyroY * 0.3;
+    }
+    if (abs(imu.data.gyroZ) > umbralRuido) {
+      angleZ += imu.data.gyroZ * 0.3;
+    }
 
     // Mantener en rango
     angleX = fmod(angleX, 360);
