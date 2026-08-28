@@ -85,6 +85,8 @@ bool sdAvailable = false;  // Estado de la SD
 int fileCount = 0;         // Archivos en SD
 unsigned long lastLogTime = 0;
 unsigned long logInterval = 5000;  // Log cada 5 segundos
+bool displayAvailable = false;
+
 
 // Estado PSRAM
 bool psramAvailable = false;
@@ -103,7 +105,7 @@ unsigned long displayUpdateInterval = 200;  // Actualizar display cada 100ms (10
 int lastFreeHeap = 0;
 
 // ==== DECLARACIÓN DE VARIABLES GLOBALES y MACROS ====
-#define NUM_NEOP 3         // Cantidad de Neopixeles a controlar
+#define NUM_NEOP 28        // Cantidad de Neopixeles a controlar
 #define OLED_RESET -1      // Reset pin # (or -1 if sharing Arduino reset pin)
 #define SCREEN_WIDTH 128   // OLED display width, in pixels
 #define SCREEN_HEIGHT 64   // OLED display height, in pixels
@@ -161,7 +163,21 @@ void setup() {
   Serial.begin(115200);
   Serial.println("Iniciando PULSAR RP2350A...");
 
-  // mensajeBienvenida();
+  // ============ 1. INICIALIZAR EL BUS I2C Y EL IMU PRIMERO ============
+  Wire.setSDA(8);
+  Wire.setSCL(9);
+  Wire.begin();
+
+  for (int i = 0; i < 5; i++) {
+    if (imu.beginI2C(i2cAddress) == BMI2_OK) {
+      imuControl = true;
+      break;
+    } else {
+      imuControl = false;
+    }
+    Serial.println("Intento inicialización IMU: " + String(i));
+    delay(100);  // Reducido a 100ms para no bloquear de más
+  }
 
   // ============ INICIALIZACIÓN PDM ============
   PDM.setDIN(kPdmDinPin);
@@ -177,20 +193,12 @@ void setup() {
   // ============ INICIALIZACIÓN HDMI ============
   if (!display.begin()) {
     Serial.println("Error: Display HDMI");
+    displayAvailable = false;
   }
+  displayAvailable = true;
   centerX = display.width() / 2;
   centerY = display.height() / 2;
   display.fillScreen(0x0000);
-
-  // ============ INICIALIZACIÓN IMU ============
-  Wire.setSDA(8);
-  Wire.setSCL(9);
-  Wire.begin();
-  if (imu.beginI2C(i2cAddress) == BMI2_OK) {
-    imuControl = true;
-  } else {
-    imuControl = false;
-  }
 
   // ============ INICIALIZACIÓN PSRAM ============
 #if defined(RP2350_PSRAM_CS)
@@ -220,11 +228,10 @@ void setup() {
     sdAvailable = true;
   }
 
-  Serial.println("Setup Core 0 completado. Iniciando stream de audio...");
+  mensajeBienvenida();
 }
 
 void loop() {
-  // 1. TRANSMISIÓN DE AUDIO (Prioridad Alta)
 
   // 2. LECTURA DEL SENSOR IMU
   if (imuControl) {
@@ -402,6 +409,9 @@ void setup1() {
   pagwebDebug("Pulsar RP2350 Ready! :D");
 
   pinMode(LED_BUILTIN, OUTPUT);
+  pixels.begin();  // Configura el pin de datos
+  pixels.clear();  // Apaga todos los LEDs en la memoria
+  pixels.show();   // Manda la señal de apagado a los LEDs físicos
 }
 
 void loop1() {
@@ -517,6 +527,8 @@ void loop1() {
             sendJSON["spi"] = sdAvailable;
             sendJSON["psram"] = psramAvailable;
             sendJSON["psram_size"] = String(psramSizeMB) + " MB";
+            sendJSON["pd_mic"] = pdmAvailable;
+            sendJSON["fpc_video"] = displayAvailable;
 
             serializeJson(sendJSON, PagWeb);
             PagWeb.println();
@@ -534,46 +546,7 @@ void loop1() {
           }
       }
     }
-  }
-
-  /*
-  // 2. TRANSMITIR AUDIO SI LA BANDERA ESTÁ ACTIVA
-  if (enviarAudioActivo) {
-    if (millis() - inicioAudio < duracionAudio) {
-
-      // Verificamos si hay muestras
-      if (samplesRead > 0) {
-
-        // Forma segura y rápida de tomar los datos sin depender de noInterrupts()
-        // que falla entre núcleos. Copiamos rápido el contador.
-        size_t localCount = samplesRead;
-        samplesRead = 0;  // Reseteamos rápido
-
-        if (localCount > kSampleBufferCount) {
-          localCount = kSampleBufferCount;
-        }
-
-        // Enviamos el bloque binario a la página web
-        PagWeb.write((uint8_t*)sampleBuffer, localCount * sizeof(int16_t));
-      }
-
-    } else {
-      // Ya pasaron los 10 segundos, apagamos la transmisión
-      enviarAudioActivo = false;
-
-      // Opcional: Avisar al frontend que terminamos
-      Serial.println("\n");
-      sendJSON.clear();
-      sendJSON["status"] = "DONE";
-      sendJSON["message"] = "Stream finalizado";
-      serializeJson(sendJSON, PagWeb);
-      PagWeb.println();
-    }
-
-    delay(1);  // Pequeño respiro de 1ms para el núcleo 1
-  }
-  */
-
+  } else demo();
 
   delay(100);
 }
