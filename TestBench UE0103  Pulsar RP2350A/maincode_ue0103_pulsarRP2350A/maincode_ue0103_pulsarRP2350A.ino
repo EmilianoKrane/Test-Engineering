@@ -110,6 +110,10 @@ int lastFreeHeap = 0;
 bool status_OLED = false;  // Variable check de inicialización OLED por I2C
 String JSON_entrada;       // Variable que recibe JSON del frontend
 String JSON_salida;        // Variable que envía el JSON de datos
+// Banderas para controlar la transmisión de audio
+bool enviarAudioActivo = false;
+unsigned long inicioAudio = 0;
+const unsigned long duracionAudio = 10000;  // 10 segundos
 
 // ==== CREACIÓN DE OBJETOS ====
 SerialPIO PagWeb(20, 21);                                          // Sintaxis: SerialPIO nombre(TX_PIN, RX_PIN);
@@ -156,6 +160,8 @@ void pagwebDebug(String cmd) {
 void setup() {
   Serial.begin(115200);
   Serial.println("Iniciando PULSAR RP2350A...");
+
+  // mensajeBienvenida();
 
   // ============ INICIALIZACIÓN PDM ============
   PDM.setDIN(kPdmDinPin);
@@ -374,7 +380,7 @@ void loop() {
     lastDisplayUpdate = millis();
   }
 
-
+  /*
   // ===== TRANSMISIÓN DE DATOS DE PD =====
   if (samplesRead > 0) {
     noInterrupts();
@@ -385,16 +391,17 @@ void loop() {
     if (localCount > kSampleBufferCount) {
       localCount = kSampleBufferCount;
     }
-
-    // Enviar TODO el buffer en binario
-    Serial.write((uint8_t*)sampleBuffer, localCount * sizeof(int16_t));
+    Serial.write((uint8_t*)sampleBuffer, localCount * sizeof(int16_t));  // Enviar TODO el buffer en binario
   }
+  */
 }
-// ============ CORE 1: COMUNICACIÓN SERIAL ============
 
+// ============ CORE 1: COMUNICACIÓN SERIAL ============
 void setup1() {
-  PagWeb.begin(115200);
+  PagWeb.begin(230400);
   pagwebDebug("Pulsar RP2350 Ready! :D");
+
+  pinMode(LED_BUILTIN, OUTPUT);
 }
 
 void loop1() {
@@ -460,7 +467,46 @@ void loop1() {
         case 4:
           {
             sendJSON.clear();
+            sendJSON["status"] = "OK";
+            sendJSON["message"] = "Iniciando stream de audio por 10s";
+            serializeJson(sendJSON, PagWeb);
+            PagWeb.println();
+            PagWeb.flush();
 
+            // 🟢 INDICADOR FÍSICO ON: Si el LED enciende, la placa RECIBIÓ el JSON
+            digitalWrite(LED_BUILTIN, HIGH);
+
+            unsigned long inicioAudio = millis();
+            bool enviandoAudio = true;
+            int16_t bufferLocal[kSampleBufferCount];
+
+            while (enviandoAudio) {
+              if (millis() - inicioAudio < duracionAudio) {
+                if (samplesRead > 0) {
+                  noInterrupts();
+                  size_t localCount = samplesRead;
+                  if (localCount > kSampleBufferCount) localCount = kSampleBufferCount;
+                  memcpy(bufferLocal, (void*)sampleBuffer, localCount * sizeof(int16_t));
+                  samplesRead = 0;
+                  interrupts();
+
+                  PagWeb.write((uint8_t*)bufferLocal, localCount * sizeof(int16_t));
+                }
+                delay(1);
+              } else {
+                enviandoAudio = false;
+
+                // 🔴 INDICADOR FÍSICO OFF: Terminaron los 10 segundos
+                digitalWrite(LED_BUILTIN, LOW);
+
+                Serial.println("\n");
+                sendJSON.clear();
+                sendJSON["status"] = "DONE";
+                sendJSON["message"] = "Stream finalizado";
+                serializeJson(sendJSON, PagWeb);
+                PagWeb.println();
+              }
+            }
             break;
           }
 
@@ -477,10 +523,6 @@ void loop1() {
             break;
           }
 
-
-
-
-
         default:
           {
             sendJSON.clear();
@@ -492,11 +534,48 @@ void loop1() {
           }
       }
     }
-  } else {
-    demo();
   }
 
-  delay(1);  // Pequeño respiro de 1ms para el núcleo 1
+  /*
+  // 2. TRANSMITIR AUDIO SI LA BANDERA ESTÁ ACTIVA
+  if (enviarAudioActivo) {
+    if (millis() - inicioAudio < duracionAudio) {
+
+      // Verificamos si hay muestras
+      if (samplesRead > 0) {
+
+        // Forma segura y rápida de tomar los datos sin depender de noInterrupts()
+        // que falla entre núcleos. Copiamos rápido el contador.
+        size_t localCount = samplesRead;
+        samplesRead = 0;  // Reseteamos rápido
+
+        if (localCount > kSampleBufferCount) {
+          localCount = kSampleBufferCount;
+        }
+
+        // Enviamos el bloque binario a la página web
+        PagWeb.write((uint8_t*)sampleBuffer, localCount * sizeof(int16_t));
+      }
+
+    } else {
+      // Ya pasaron los 10 segundos, apagamos la transmisión
+      enviarAudioActivo = false;
+
+      // Opcional: Avisar al frontend que terminamos
+      Serial.println("\n");
+      sendJSON.clear();
+      sendJSON["status"] = "DONE";
+      sendJSON["message"] = "Stream finalizado";
+      serializeJson(sendJSON, PagWeb);
+      PagWeb.println();
+    }
+
+    delay(1);  // Pequeño respiro de 1ms para el núcleo 1
+  }
+  */
+
+
+  delay(100);
 }
 
 
