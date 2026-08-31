@@ -164,6 +164,7 @@ void loop() {
     } else {
 
       String Function = receiveJSON["Function"];
+      String targetAddr = receiveJSON["Address"] | "0x20";  // 0x20 por defecto si no viene
 
       int opc = 0;
 
@@ -193,64 +194,27 @@ void loop() {
         case 3:
           {
             sendJSON.clear();
-            processCommand("on 20");
+            processCommand("on " + targetAddr);
             break;
           }
 
         case 4:
           {
             sendJSON.clear();
-            processCommand("off 20");
+            processCommand("off " + targetAddr);
             break;
           }
 
         case 5:
           {
             sendJSON.clear();
-            processCommand("adc0 20");
+            processCommand("adc0 " + targetAddr);
             break;
           }
       }
     }
   }
-
-
-
-
-  /*
-  while (Serial.available()) {
-    char c = (char)Serial.read();
-    if (c == '\r' || c == '\n') {
-      serial_line_buffer.trim();
-      if (serial_line_buffer.length() > 0) {
-        String cmd = serial_line_buffer;
-        cmd.toLowerCase();
-        processCommand(cmd);
-      }
-      serial_line_buffer = "";
-    } else if (serial_line_buffer.length() < 96) {
-      serial_line_buffer += c;
-    }
-  }
-*/
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -279,49 +243,115 @@ void processCommand(String cmd) {
 //             FUNCIONES PRINCIPALES
 // ═══════════════════════════════════════════════════════════
 void scanDevices() {
+  sendJSON.clear();
+
   if (i2c_safe_mode) {
-    Serial.println("[ERROR] I2C en SAFE MODE. Usa 'recover'.");
+    sendJSON["scan"] = "FAIL";
+    sendJSON["error"] = "SAFE_MODE";
+    serializeJson(sendJSON, Serial);
+    Serial.println();
     return;
   }
 
-  Serial.println("\n━━━ SCAN I2C ━━━");
   device_count = 0;
+  bool target_found = false;  // Bandera para rastrear si encontramos el 0x20
   WIRE.setTimeout(50);
+
+  JsonArray devicesArray = sendJSON.createNestedArray("devices");
 
   for (uint8_t addr = 0x08; addr <= 0x77; addr++) {
     WIRE.beginTransmission(addr);
     if (WIRE.endTransmission() == 0) {
       found_devices[device_count++] = addr;
-      Serial.printf("  [%02d] 0x%02X\n", device_count, addr);
+
+      // Si la dirección es 0x20, activamos la bandera
+      if (addr == 0x20) {
+        target_found = true;
+      }
+
+      char hexStr[5];
+      sprintf(hexStr, "0x%02X", addr);
+      devicesArray.add(hexStr);
+
       delay(DEVICE_DELAY);
     }
   }
-  Serial.printf("━━━━━━━━━━━━━━━━\nTotal: %d devices\n\n", device_count);
+
+  // Evaluamos la bandera para definir el estado del escaneo
+  if (target_found) {
+    sendJSON["scan"] = "OK";
+    sendJSON["Result"] = "OK";
+  } else {
+    sendJSON["scan"] = "FAIL";
+    sendJSON["error"] = "0x20_NOT_FOUND";  // Contexto adicional útil para tu script de Python
+  }
+
+  sendJSON["count"] = device_count;
+  serializeJson(sendJSON, Serial);
+  Serial.println();
 }
 
 void relayOn(String cmd) {
+  sendJSON.clear();
   uint8_t address = parseHex(cmd.substring(3));
-  if (address == 0) return;
+  if (address == 0) return;  // parseHex ya emitió el error JSON
 
-  if (sendCommand(address, CMD_RELAY_ON)) Serial.printf("[OK] Relay ON en 0x%02X\n", address);
-  else Serial.printf("[FAIL] Fallo al encender relay en 0x%02X\n", address);
+  char hexStr[5];
+  sprintf(hexStr, "0x%02X", address);
+
+  sendJSON["action"] = "ON";
+  sendJSON["addr"] = hexStr;
+
+  if (sendCommand(address, CMD_RELAY_ON)) {
+    sendJSON["relay"] = "OK";
+  } else {
+    sendJSON["relay"] = "FAIL";
+  }
+  serializeJson(sendJSON, Serial);
+  Serial.println();
 }
 
 void relayOff(String cmd) {
+  sendJSON.clear();
   uint8_t address = parseHex(cmd.substring(4));
   if (address == 0) return;
 
-  if (sendCommand(address, CMD_RELAY_OFF)) Serial.printf("[OK] Relay OFF en 0x%02X\n", address);
-  else Serial.printf("[FAIL] Fallo al apagar relay en 0x%02X\n", address);
+  char hexStr[5];
+  sprintf(hexStr, "0x%02X", address);
+
+  sendJSON["action"] = "OFF";
+  sendJSON["addr"] = hexStr;
+
+  if (sendCommand(address, CMD_RELAY_OFF)) {
+    sendJSON["relay"] = "OK";
+  } else {
+    sendJSON["relay"] = "FAIL";
+  }
+  serializeJson(sendJSON, Serial);
+  Serial.println();
 }
 
 void readADCCommand(String cmd, bool adc1) {
-  if (i2c_safe_mode) return;
+  sendJSON.clear();
+
+  if (i2c_safe_mode) {
+    sendJSON["adc"] = "FAIL";
+    sendJSON["error"] = "SAFE_MODE";
+    serializeJson(sendJSON, Serial);
+    Serial.println();
+    return;
+  }
 
   uint8_t address = parseHex(cmd.substring(5));
   if (address == 0) return;
 
+  char hexStr[5];
+  sprintf(hexStr, "0x%02X", address);
+
   uint8_t adc_command = adc1 ? CMD_ADC_PA1_12BIT : CMD_ADC_PA0_12BIT;
+
+  sendJSON["channel"] = adc1 ? 1 : 0;
+  sendJSON["addr"] = hexStr;
 
   if (transmitCommandByte(address, adc_command) == 0) {
     delay(10);
@@ -330,12 +360,27 @@ void readADCCommand(String cmd, bool adc1) {
       uint8_t hsb = WIRE.read();
       uint8_t lsb = WIRE.read();
       uint16_t adc_value = ((uint16_t)(hsb & 0x0F) << 8) | lsb;
-      Serial.printf("[OK] 0x%02X - ADC%d: %u (0x%03X)\n", address, adc1 ? 1 : 0, adc_value, adc_value);
+
+      sendJSON["adc"] = "OK";
+      sendJSON["value"] = adc_value;
+
+      // Puedes agregar lógica para determinar el estado según tu sensor (TEMT6000)
+      if (adc_value > 500) {
+        sendJSON["state"] = "light";
+      } else {
+        sendJSON["state"] = "dark";
+      }
+
+      serializeJson(sendJSON, Serial);
+      Serial.println();
       return;
     }
-    while (WIRE.available()) WIRE.read();  // Limpiar buffer en caso de lectura incompleta
+    while (WIRE.available()) WIRE.read();  // Limpiar buffer
   }
-  Serial.printf("[FAIL] Fallo al leer ADC%d en 0x%02X\n", adc1 ? 1 : 0, address);
+
+  sendJSON["adc"] = "FAIL";
+  serializeJson(sendJSON, Serial);
+  Serial.println();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -370,7 +415,11 @@ uint8_t parseHex(String hex_str) {
   char* endptr;
   long addr = strtol(hex_str.c_str(), &endptr, 16);
   if (*endptr != '\0' || addr < 0x08 || addr > 0x77) {
-    Serial.println("ERROR: Dirección inválida (0x08-0x77)");
+    sendJSON.clear();
+    sendJSON["status"] = "ERROR";
+    sendJSON["msg"] = "Invalid I2C address";
+    serializeJson(sendJSON, Serial);
+    Serial.println();
     return 0;
   }
   return (uint8_t)addr;
