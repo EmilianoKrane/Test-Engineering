@@ -1,47 +1,29 @@
-// ═══════════════════════════════════════════════════════════
-// ADMIN SIMPLE - Controlador I2C Simplificado (Scan, Relay, ADC)
-// ═══════════════════════════════════════════════════════════
+/*
+Maincode test ue0098 con menu de interacción con PY32f003xx
+Desarrollado por Esp32c6
+*/
 
 #include <Wire.h>
+#include <ArduinoJson.h>
 
-// Configuración I2C seleccionada automáticamente por arquitectura.
-#if defined(ARDUINO_ARCH_RP2040)
-  #define WIRE Wire1
-  #ifndef DEVLAB_I2C_SDA
-    #define DEVLAB_I2C_SDA 12
-  #endif
-  #ifndef DEVLAB_I2C_SCL
-    #define DEVLAB_I2C_SCL 13
-  #endif
-  #define I2C_BUS_NAME "Wire1"
-#elif defined(ARDUINO_ARCH_ESP32)
-  #define WIRE Wire
-  #ifndef DEVLAB_I2C_SDA
-    #define DEVLAB_I2C_SDA 6
-  #endif
-  #ifndef DEVLAB_I2C_SCL
-    #define DEVLAB_I2C_SCL 7
-  #endif
-  #define I2C_BUS_NAME "Wire"
-#else
-  #error "Unsupported architecture: use RP2040/RP2350 or ESP32"
-#endif
-#define I2C_SDA DEVLAB_I2C_SDA
-#define I2C_SCL DEVLAB_I2C_SCL
-#define I2C_FREQ 100000  // 100 kHz
 
-// ═══════════════════════════════════════════════════════════
-//             COMANDOS HABILITADOS
-// ═══════════════════════════════════════════════════════════
-#define CMD_RELAY_OFF      0xA0   
-#define CMD_RELAY_ON       0xA1   
-#define CMD_ADC_PA0_12BIT  0x59
-#define CMD_ADC_PA1_12BIT  0xDB
+// ==== DECLARACIÓN DE GPIOS ====
+#define I2C_SDA 6
+#define I2C_SCL 7
 
-// Variables globales
+
+// ==== REGISTROS DE MANIPULACIÓN ====
+#define CMD_RELAY_OFF 0xA0
+#define CMD_RELAY_ON 0xA1
+#define CMD_ADC_PA0_12BIT 0x59
+#define CMD_ADC_PA1_12BIT 0xDB
+
+// ==== DECLARACIÓN DE VARIABLES GLOBALES ====
+#define WIRE Wire
+#define I2C_FREQ 100000  // 100 kHz BUS I2C
 uint8_t found_devices[128];
 uint8_t device_count = 0;
-#define DEVICE_DELAY 30          
+#define DEVICE_DELAY 30
 constexpr uint32_t MIN_COMMAND_INTERVAL_MS = 25;
 uint32_t last_i2c_command_time = 0;
 bool i2c_command_sent = false;
@@ -49,14 +31,17 @@ bool i2c_safe_mode = false;
 bool i2c_initialized = false;
 String serial_line_buffer = "";
 
-// Declaraciones
-uint8_t transmitCommandByte(uint8_t address, uint8_t command);
+uint8_t transmitCommandByte(uint8_t address, uint8_t command);  // Declaraciones
 bool sendCommand(uint8_t address, uint8_t command);
 uint8_t parseHex(String hex_str);
 
-// ═══════════════════════════════════════════════════════════
-//             RECUPERACIÓN E INICIALIZACIÓN I2C
-// ═══════════════════════════════════════════════════════════
+// ==== CREACIÓN DE OBJETOS ====
+StaticJsonDocument<1024> receiveJSON;
+StaticJsonDocument<1024> sendJSON;
+
+
+
+// ==== FUNCIONES DE UTILIDAD EN MANIPULACIÓN DE BUS I2C ====
 bool waitForPinHigh(uint8_t pin, uint32_t timeout_us) {
   uint32_t started = micros();
   while (!digitalRead(pin)) {
@@ -113,17 +98,10 @@ bool initializeI2CBus(bool verbose) {
     return false;
   }
 
-  #if defined(ARDUINO_ARCH_RP2040)
-    WIRE.setSDA(I2C_SDA);
-    WIRE.setSCL(I2C_SCL);
-    WIRE.begin();
-  #elif defined(ARDUINO_ARCH_ESP32)
-    WIRE.begin(I2C_SDA, I2C_SCL);
-  #endif
-  
+  WIRE.begin(I2C_SDA, I2C_SCL);
   WIRE.setClock(I2C_FREQ);
   WIRE.setTimeout(50);
-  
+
   i2c_initialized = true;
   i2c_safe_mode = false;
   i2c_command_sent = false;
@@ -134,33 +112,32 @@ bool initializeI2CBus(bool verbose) {
   return true;
 }
 
-// ═══════════════════════════════════════════════════════════
-//             SETUP Y LOOP
-// ═══════════════════════════════════════════════════════════
+void serialDebug(String str) {
+  StaticJsonDocument<255> doc;
+  doc["debug"] = str;
+  serializeJson(doc, Serial);
+  Serial.println();
+}
+
+// ==== ====
 void setup() {
   Serial.begin(115200);
-
-  #if defined(ARDUINO_ARCH_RP2040)
-    uint32_t t0 = millis();
-    while (!Serial && millis() - t0 < 2000) delay(10);
-    delay(200);
-  #else
-    delay(500);
-  #endif
-
-  Serial.println("\n╔═══════════════════════════════════════╗");
-  Serial.println("║   ADMIN - I2C Control (Simplificado)  ║");
-  Serial.println("╚═══════════════════════════════════════╝");
-  Serial.println("[INFO] Inicializando I2C...");
+  delay(500);
+  sendJSON.clear();
+  sendJSON["System"] = "Ready";
+  sendJSON["Module"] = "TEMT6000 + PY32F003 DevLab";
+  serializeJson(sendJSON, Serial);
+  Serial.println();
 
   pinMode(I2C_SDA, INPUT_PULLUP);
   pinMode(I2C_SCL, INPUT_PULLUP);
   delay(10);
 
   if (!initializeI2CBus(true)) {
-    Serial.println("[SAFE MODE] Use 'recover' to retry");
+    serialDebug("[SAFE MODE] Use 'recover' to retry connection with i2c bus");
   }
 
+  /*
   Serial.println("\nComandos disponibles:");
   Serial.println("  scan     - Escanear bus I2C");
   Serial.println("  on XX    - Encender relay (XX = hex address)");
@@ -168,9 +145,79 @@ void setup() {
   Serial.println("  adc0 XX  - Leer PA0/ADC_IN0 a 12 bits");
   Serial.println("  adc1 XX  - Leer PA1/ADC_IN1 a 12 bits");
   Serial.println("  recover  - Reiniciar bus I2C\n");
+*/
 }
 
 void loop() {
+
+  if (Serial.available()) {
+
+    String JSONin = Serial.readStringUntil('\n');
+    DeserializationError error = deserializeJson(receiveJSON, JSONin);
+
+    if (error) {
+      sendJSON.clear();
+      sendJSON["status"] = "FAIL";
+      sendJSON["error"] = String("Invalid JSON: ") + error.c_str();
+      serializeJson(sendJSON, Serial);
+      Serial.println();
+    } else {
+
+      String Function = receiveJSON["Function"];
+
+      int opc = 0;
+
+      if (Function == "ping") opc = 1;             // {"Function":"ping"}
+      else if (Function == "scan") opc = 2;        // {"Function":"scan"}
+      else if (Function == "onBlink") opc = 3;     // {"Function":"onBlink"}
+      else if (Function == "offBlink") opc = 4;    // {"Function":"offBlink"}
+      else if (Function == "readSensor") opc = 5;  // {"Function":"readSensor"}
+
+      switch (opc) {
+        case 1:
+          {
+            sendJSON.clear();
+            sendJSON["ping"] = "pong";
+            serializeJson(sendJSON, Serial);
+            Serial.println();
+            break;
+          }
+
+        case 2:
+          {
+            sendJSON.clear();
+            processCommand("scan");
+            break;
+          }
+
+        case 3:
+          {
+            sendJSON.clear();
+            processCommand("on 20");
+            break;
+          }
+
+        case 4:
+          {
+            sendJSON.clear();
+            processCommand("off 20");
+            break;
+          }
+
+        case 5:
+          {
+            sendJSON.clear();
+            processCommand("adc0 20");
+            break;
+          }
+      }
+    }
+  }
+
+
+
+
+  /*
   while (Serial.available()) {
     char c = (char)Serial.read();
     if (c == '\r' || c == '\n') {
@@ -185,7 +232,27 @@ void loop() {
       serial_line_buffer += c;
     }
   }
+*/
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // ═══════════════════════════════════════════════════════════
 //             PROCESAMIENTO DE COMANDOS
@@ -216,7 +283,7 @@ void scanDevices() {
     Serial.println("[ERROR] I2C en SAFE MODE. Usa 'recover'.");
     return;
   }
-  
+
   Serial.println("\n━━━ SCAN I2C ━━━");
   device_count = 0;
   WIRE.setTimeout(50);
@@ -250,12 +317,12 @@ void relayOff(String cmd) {
 
 void readADCCommand(String cmd, bool adc1) {
   if (i2c_safe_mode) return;
-  
+
   uint8_t address = parseHex(cmd.substring(5));
   if (address == 0) return;
 
   uint8_t adc_command = adc1 ? CMD_ADC_PA1_12BIT : CMD_ADC_PA0_12BIT;
-  
+
   if (transmitCommandByte(address, adc_command) == 0) {
     delay(10);
     WIRE.setTimeout(100);
@@ -266,7 +333,7 @@ void readADCCommand(String cmd, bool adc1) {
       Serial.printf("[OK] 0x%02X - ADC%d: %u (0x%03X)\n", address, adc1 ? 1 : 0, adc_value, adc_value);
       return;
     }
-    while (WIRE.available()) WIRE.read(); // Limpiar buffer en caso de lectura incompleta
+    while (WIRE.available()) WIRE.read();  // Limpiar buffer en caso de lectura incompleta
   }
   Serial.printf("[FAIL] Fallo al leer ADC%d en 0x%02X\n", adc1 ? 1 : 0, address);
 }
