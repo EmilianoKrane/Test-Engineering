@@ -1,5 +1,5 @@
 /*
-Firmware de Prueba UE0091 BNO055 + BMP280 Fusion Sensor
+Firmware de Prueba UE0091 BNO055 + BMP280 Fusion Sensor (Auto-Recovery)
 */
 
 // ==== LIBRERIAS ====
@@ -43,94 +43,84 @@ void releaseBuses() {
   delay(50);
 }
 
-void setup() {
-  Serial.begin(115200);
-  delay(100);
-  
-  serialDebug("System Ready: BNO055 + BMP280 DevLab");
+// ==== RUTINA DE AUTO-RECUPERACIÓN ====
+bool recoverI2C() {
+  serialDebug("Attempting I2C bus hardware recovery...");
+  releaseBuses(); // Libera pines atascados
 
   Wire.begin(SDA_PIN, SCL_PIN);
-  Wire.setClock(400000);  // High speed
+  Wire.setClock(400000);  
   
-  // Timeout para evitar que el bus se cuelgue si falta un sensor
   #if defined(ESP32) || defined(ESP8266)
   Wire.setTimeOut(150); 
   #endif
   
   delay(100);
 
-  // Escaneo de Direcciones I2C con Logs JSON
-  serialDebug("Scanning I2C bus...");
-  for (uint8_t addr = 1; addr < 127; addr++) {
-    Wire.beginTransmission(addr);
-    if (Wire.endTransmission() == 0) {
-      String addrHex = "";
-      if (addr < 16) addrHex = "0";
-      addrHex = addrHex + String(addr, HEX);
-      serialDebug("I2C device found at 0x" + addrHex);
-    }
-  }
-
-  // Inicializar BNO055
-  serialDebug("Initializing BNO055...");
   status_bno055 = bno.begin();
-  if (!status_bno055) {
-    serialDebug("FAIL: BNO055 I2C initialization failed.");
-  } else {
-    serialDebug("OK: BNO055 initialized.");
-  }
-  delay(50); 
-
-  // Inicializar BMP280 en dirección 0x76
-  serialDebug("Initializing BMP280...");
   status_bmp280 = bmp.begin(0x76);
-  if (!status_bmp280) {
-    serialDebug("FAIL: BMP280 I2C initialization failed.");
-  } else {
-    serialDebug("OK: BMP280 initialized.");
-    
-    // Configurar muestreo solo si se inicializó correctamente
+
+  if (status_bno055 && status_bmp280) {
+    // Si se recuperaron, restauramos la configuración del BMP280
     bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,
                     Adafruit_BMP280::SAMPLING_X2,
                     Adafruit_BMP280::SAMPLING_X16,
                     Adafruit_BMP280::FILTER_X16,
                     Adafruit_BMP280::STANDBY_MS_500);
+    serialDebug("RECOVERY SUCCESS: Sensors reconnected and configured.");
+    return true;
+  } else {
+    serialDebug("RECOVERY FAIL: Sensors still unreachable. Check wiring.");
+    return false;
   }
-  delay(50); 
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(100);
+  
+  serialDebug("System Ready: BNO055 + BMP280 DevLab");
+
+  // Utilizamos la rutina de recuperación como nuestro inicializador principal
+  recoverI2C();
   
   serialDebug("Setup complete. Starting loop...");
 }
 
-
 void loop() {
-  StaticJsonDocument<768> doc; // Usamos un doc local para las lecturas
+  StaticJsonDocument<768> doc; 
   doc.clear();
 
-  // 1. Verificación inicial: ¿Sobrevivieron los sensores al setup?
+  // 1. MODO RECUPERACIÓN: Si las banderas cayeron, intentamos reiniciar el bus
   if (!status_bno055 || !status_bmp280) {
-      doc["status"] = "FATAL_ERROR";
-      doc["error"] = "Sensors not initialized. Halting reads.";
+      doc["status"] = "RECOVERY_MODE";
+      doc["error"] = "Sensors offline. Running recovery sequence...";
       serializeJson(doc, Serial);
       Serial.println();
-      delay(2000);
-      return; // Aborta el resto del loop para no saturar con basura
+      
+      recoverI2C(); 
+      delay(1000); // Damos un margen antes del siguiente intento
+      return;      // Aborta esta iteración del loop
   }
 
-  // 2. Intentar leer un evento (funciona como chequeo de salud)
+  // 2. LECTURA Y CHEQUEO DE SALUD EN VIVO
   sensors_event_t orientation, gyro, linearAccel, magnetometer, accel, gravity;
   bool read_ok = bno.getEvent(&orientation, Adafruit_BNO055::VECTOR_EULER);
   
-  // Si getEvent devuelve false, perdimos comunicación I2C
   if (!read_ok) {
       doc["status"] = "READ_ERROR";
-      doc["error"] = "Failed to read from BNO055. Possible disconnection.";
+      doc["error"] = "I2C timeout/disconnect on BNO055. Forcing recovery on next cycle.";
       serializeJson(doc, Serial);
       Serial.println();
-      delay(1000);
-      return; // Aborta esta iteración
+      
+      // Tumbamos las banderas para forzar la entrada al MODO RECUPERACIÓN en el próximo loop
+      status_bno055 = false; 
+      status_bmp280 = false; 
+      delay(500);
+      return; 
   }
 
-  // Si llegamos aquí, la lectura es segura. Procedemos con el resto.
+  // Si llegamos aquí, la lectura es segura.
   bno.getEvent(&gyro, Adafruit_BNO055::VECTOR_GYROSCOPE);
   bno.getEvent(&linearAccel, Adafruit_BNO055::VECTOR_LINEARACCEL);
   bno.getEvent(&magnetometer, Adafruit_BNO055::VECTOR_MAGNETOMETER);
@@ -146,7 +136,7 @@ void loop() {
   bno.getCalibration(&sys, &gyroCal, &accelCal, &magCal);
 
   // --- ESTRUCTURACIÓN DEL JSON ---
-  doc["status"] = "OK"; // Indicador de lectura válida
+  doc["status"] = "OK"; 
   
   doc["bmp280"]["temperature"] = temp_event.temperature;
   doc["bmp280"]["pressure"] = pressure_event.pressure;
