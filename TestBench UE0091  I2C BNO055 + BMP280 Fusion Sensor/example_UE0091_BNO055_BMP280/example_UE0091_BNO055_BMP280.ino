@@ -10,6 +10,12 @@ Firmware de Prueba UE0091 BNO055 + BMP280 Fusion Sensor
 #include <Adafruit_BMP280.h>
 #include <utility/imumaths.h>
 
+#define SDA_PIN 6     // >> GPIO06 SDA Bus I2C
+#define SCL_PIN 7     // >> GPIO07 SCL Bus I2C
+
+StaticJsonDocument<1024> receiveJSON;
+StaticJsonDocument<1024> sendJSON;
+
 // BNO055: orientación y movimiento
 Adafruit_BNO055 bno(55, 0x28, &Wire);
 

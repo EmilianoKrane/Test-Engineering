@@ -18,12 +18,14 @@ Firmware de Test UE0091 BNO055 + BMP280 Fusion Sensor
 // ==== DECLARACIÓN DE VARIABLES GLOBALES ====
 uint8_t addrBNO055 = 0x28;
 int noValues = 20;
+bool status_bno055 = false;  // Promovidas a globales para proteger las lecturas
+bool status_bmp280 = false;
 
 // ==== CREACIÓN DE OBJETOS =====
 StaticJsonDocument<1024> receiveJSON;
 StaticJsonDocument<1024> sendJSON;
-Adafruit_BNO055 bno(55, addrBNO055, &Wire);  // BNO055: orientación y movimiento
-Adafruit_BMP280 bmp;                         // BMP280: temperatura y presión
+Adafruit_BNO055 bno(55, addrBNO055, &Wire);
+Adafruit_BMP280 bmp;
 Adafruit_Sensor* bmp_temp = bmp.getTemperatureSensor();
 Adafruit_Sensor* bmp_pressure = bmp.getPressureSensor();
 
@@ -36,12 +38,11 @@ void serialDebug(String str) {
 }
 
 void releaseBuses() {
-  Wire.end();
-  pinMode(SDA_PIN, INPUT);
-  pinMode(SCL_PIN, INPUT);
-  delay(100);
+  Wire.end();                      // Libera el hardware I2C
+  pinMode(SDA_PIN, INPUT_PULLUP);  // Asegura un estado alto seguro
+  pinMode(SCL_PIN, INPUT_PULLUP);
+  delay(50);
 }
-
 
 void setup() {
   Serial.begin(115200);
@@ -52,11 +53,8 @@ void setup() {
   Serial.println();
 }
 
-
 void loop() {
-
   if (Serial.available()) {
-
     String inJSON = Serial.readStringUntil('\n');
     DeserializationError error = deserializeJson(receiveJSON, inJSON);
 
@@ -67,10 +65,9 @@ void loop() {
       serializeJson(sendJSON, Serial);
       Serial.println();
     } else {
-
       String Function = receiveJSON["Function"];
-
       int opc = 0;
+
       if (Function == "ping") opc = 1;             // {"Function":"ping"}
       else if (Function == "initSensor") opc = 2;  // {"Function":"initSensor"}
       else if (Function == "readSensor") opc = 3;  // {"Function":"readSensor"}
@@ -88,43 +85,49 @@ void loop() {
         case 2:
           {
             sendJSON.clear();
-            bool status_bno055 = false;
-            bool status_bmp238 = false;
 
-            // ==== Inicialización de Sensores ====
+            // 1. Limpiar el bus de lecturas previas atascadas
+            releaseBuses();
             Wire.begin(SDA_PIN, SCL_PIN);
-            // For higher and more stable speed, use the TLC4311. 400kHz
-            Wire.setClock(400000);  // typical speed 100kHz
-            delay(100);
+            Wire.setClock(100000);
 
-            // Inicializar BNO055
-            if (!bno.begin()) {
+// Timeout de hardware (Critico si usas arquitectura ESP32/RP2040)
+#if defined(ESP32)
+            Wire.setTimeOut(150);
+#endif
+
+            // 2. Inicializar BNO055
+            status_bno055 = bno.begin();
+            if (!status_bno055) {
               sendJSON["status_bno"] = "FAIL";
               sendJSON["error_bno"] = "BNO055 I2C initialization failed.";
             } else {
               sendJSON["status_bno"] = "sensor initialized";
-              status_bno055 = true;
+              delay(50);  // Breve estabilización, no 500ms
             }
-            delay(1500);  // Estabilizar BNO055
 
-            // Inicializar BMP280 en dirección 0x76
-            if (!bmp.begin(0x76)) {
+            // 3. Inicializar BMP280
+            status_bmp280 = bmp.begin(0x76);
+            if (!status_bmp280) {
               sendJSON["status_bmp"] = "FAIL";
               sendJSON["error_bmp"] = "BMP280 I2C initialization failed.";
             } else {
               sendJSON["status_bmp"] = "sensor initialized";
-              status_bmp238 = true;
+              // SOLUCIÓN AL CUELGUE: Solo configurar si la inicialización fue exitosa
+              bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,
+                              Adafruit_BMP280::SAMPLING_X2,
+                              Adafruit_BMP280::SAMPLING_X16,
+                              Adafruit_BMP280::FILTER_X16,
+                              Adafruit_BMP280::STANDBY_MS_500);
+              delay(50);
             }
 
-            if (status_bno055 && status_bmp238) sendJSON["Result"] = "OK";
-            delay(1000);  // Estabilización del BMP280
-
-            // ==== Configuraciónd el Sensor ====
-            bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,
-                            Adafruit_BMP280::SAMPLING_X2,
-                            Adafruit_BMP280::SAMPLING_X16,
-                            Adafruit_BMP280::FILTER_X16,
-                            Adafruit_BMP280::STANDBY_MS_500);
+            // Resultado final
+            if (status_bno055 && status_bmp280) {
+              sendJSON["Result"] = "OK";
+            } else {
+              sendJSON["Result"] = "FAIL";
+            }
 
             serializeJson(sendJSON, Serial);
             Serial.println();
@@ -133,9 +136,17 @@ void loop() {
 
         case 3:
           {
-            for (int i = 0; i < noValues; i++) {
+            // Protección: Evitar colgar el bus intentando leer sensores muertos
+            if (!status_bno055 || !status_bmp280) {
+              sendJSON.clear();
+              sendJSON["status"] = "FAIL";
+              sendJSON["error"] = "Sensors not properly initialized. Run initSensor first.";
+              serializeJson(sendJSON, Serial);
+              Serial.println();
+              break;
+            }
 
-              // Eventos del BNO055
+            for (int i = 0; i < noValues; i++) {
               sensors_event_t orientation, gyro, linearAccel, magnetometer, accel, gravity;
               bno.getEvent(&orientation, Adafruit_BNO055::VECTOR_EULER);
               bno.getEvent(&gyro, Adafruit_BNO055::VECTOR_GYROSCOPE);
@@ -144,25 +155,19 @@ void loop() {
               bno.getEvent(&accel, Adafruit_BNO055::VECTOR_ACCELEROMETER);
               bno.getEvent(&gravity, Adafruit_BNO055::VECTOR_GRAVITY);
 
-              // BMP280: temperatura y presión
               sensors_event_t temp_event, pressure_event;
               bmp_temp->getEvent(&temp_event);
               bmp_pressure->getEvent(&pressure_event);
 
-              // Calibración BNO055
               int8_t temp_bno = bno.getTemp();
               uint8_t sys, gyroCal, accelCal, magCal;
               bno.getCalibration(&sys, &gyroCal, &accelCal, &magCal);
 
-              // --- ESTRUCTURACIÓN DEL JSON ---
               StaticJsonDocument<512> doc;
-              doc.clear();
 
-              // BMP280
               doc["bmp280"]["temperature"] = temp_event.temperature;
               doc["bmp280"]["pressure"] = pressure_event.pressure;
 
-              // BNO055 (Vectores)
               doc["orientation"]["x"] = orientation.orientation.x;
               doc["orientation"]["y"] = orientation.orientation.y;
               doc["orientation"]["z"] = orientation.orientation.z;
@@ -187,7 +192,6 @@ void loop() {
               doc["gravity"]["y"] = gravity.acceleration.y;
               doc["gravity"]["z"] = gravity.acceleration.z;
 
-              // Temperatura y Calibración
               doc["bno055_temp"] = temp_bno;
               doc["calibration"]["sys"] = sys;
               doc["calibration"]["gyro"] = gyroCal;
@@ -196,7 +200,6 @@ void loop() {
 
               serializeJson(doc, Serial);
               Serial.println();
-
               delay(200);
             }
             break;
@@ -215,16 +218,3 @@ void loop() {
     }
   }
 }
-
-
-
-
-/*
-
-
-
-
-
-
-
-*/
