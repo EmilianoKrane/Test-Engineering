@@ -202,7 +202,7 @@ void loop() {
           {
             sendJSON.clear();
             float minCurrent = 0.150;
-            float maxCurrent = 0.250;
+            float maxCurrent = 0.280;
             delay(50);
             float corrienteSensor = abs(current_in());
             sendJSON["current"] = corrienteSensor;
