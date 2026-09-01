@@ -5,12 +5,14 @@ Desarrollado por Esp32c6
 
 #include <Wire.h>
 #include <ArduinoJson.h>
-
+#include <HardwareSerial.h>
 
 // ==== DECLARACIÓN DE GPIOS ====
-#define I2C_SDA 6
-#define I2C_SCL 7
-
+#define RX2_PIN 15      // >> GPIO como RXD
+#define TX2_PIN 19      // >> GPIO como TXD
+#define I2C_SDA 6      // >> PIN SDA de I2C
+#define I2C_SCL 7      // >> PIN SCL de I2C
+#define POWER_USBC 20  // >> GPIO de Accionamiento de Rele de Alimentación
 
 // ==== REGISTROS DE MANIPULACIÓN ====
 #define CMD_RELAY_OFF 0xA0
@@ -36,6 +38,7 @@ bool sendCommand(uint8_t address, uint8_t command);
 uint8_t parseHex(String hex_str);
 
 // ==== CREACIÓN DE OBJETOS ====
+HardwareSerial PagWeb(1);  // Objeto para UART2 en PULSAR como PagWeb
 StaticJsonDocument<1024> receiveJSON;
 StaticJsonDocument<1024> sendJSON;
 
@@ -122,16 +125,20 @@ void serialDebug(String str) {
 // ==== ====
 void setup() {
   Serial.begin(115200);
+  PagWeb.begin(115200, SERIAL_8N1, RX2_PIN, TX2_PIN);
   delay(500);
+
   sendJSON.clear();
   sendJSON["System"] = "Ready";
   sendJSON["Module"] = "TEMT6000 + PY32F003 DevLab";
-  serializeJson(sendJSON, Serial);
-  Serial.println();
+  serializeJson(sendJSON, PagWeb);
+  PagWeb.println();
 
   pinMode(I2C_SDA, INPUT_PULLUP);
   pinMode(I2C_SCL, INPUT_PULLUP);
+  pinMode(POWER_USBC, OUTPUT);
   delay(10);
+  digitalWrite(POWER_USBC, LOW);
 
   if (!initializeI2CBus(true)) {
     serialDebug("[SAFE MODE] Use 'recover' to retry connection with i2c bus");
@@ -150,17 +157,17 @@ void setup() {
 
 void loop() {
 
-  if (Serial.available()) {
+  if (PagWeb.available()) {
 
-    String JSONin = Serial.readStringUntil('\n');
+    String JSONin = PagWeb.readStringUntil('\n');
     DeserializationError error = deserializeJson(receiveJSON, JSONin);
 
     if (error) {
       sendJSON.clear();
       sendJSON["status"] = "FAIL";
       sendJSON["error"] = String("Invalid JSON: ") + error.c_str();
-      serializeJson(sendJSON, Serial);
-      Serial.println();
+      serializeJson(sendJSON, PagWeb);
+      PagWeb.println();
     } else {
 
       String Function = receiveJSON["Function"];
@@ -173,14 +180,17 @@ void loop() {
       else if (Function == "onBlink") opc = 3;     // {"Function":"onBlink"}
       else if (Function == "offBlink") opc = 4;    // {"Function":"offBlink"}
       else if (Function == "readSensor") opc = 5;  // {"Function":"readSensor"}
+      else if (Function == "powerON") opc = 6;     // {"Function":"powerON"}
+      else if (Function == "powerOFF") opc = 7;    // {"Function":"powerOFF"}
+      else if (Function == "restart") opc = 8;     // {"Function":"restart"}
 
       switch (opc) {
         case 1:
           {
             sendJSON.clear();
             sendJSON["ping"] = "pong";
-            serializeJson(sendJSON, Serial);
-            Serial.println();
+            serializeJson(sendJSON, PagWeb);
+            PagWeb.println();
             break;
           }
 
@@ -209,6 +219,24 @@ void loop() {
           {
             sendJSON.clear();
             processCommand("adc0 " + targetAddr);
+            break;
+          }
+
+        case 6:
+          {
+            digitalWrite(POWER_USBC, HIGH);
+            break;
+          }
+
+        case 7:
+          {
+            digitalWrite(POWER_USBC, LOW);
+            break;
+          }
+
+        case 8:
+          {
+            ESP.restart();
             break;
           }
       }
@@ -248,8 +276,8 @@ void scanDevices() {
   if (i2c_safe_mode) {
     sendJSON["scan"] = "FAIL";
     sendJSON["error"] = "SAFE_MODE";
-    serializeJson(sendJSON, Serial);
-    Serial.println();
+    serializeJson(sendJSON, PagWeb);
+    PagWeb.println();
     return;
   }
 
@@ -287,8 +315,8 @@ void scanDevices() {
   }
 
   sendJSON["count"] = device_count;
-  serializeJson(sendJSON, Serial);
-  Serial.println();
+  serializeJson(sendJSON, PagWeb);
+  PagWeb.println();
 }
 
 void relayOn(String cmd) {
@@ -307,8 +335,8 @@ void relayOn(String cmd) {
   } else {
     sendJSON["relay"] = "FAIL";
   }
-  serializeJson(sendJSON, Serial);
-  Serial.println();
+  serializeJson(sendJSON, PagWeb);
+  PagWeb.println();
 }
 
 void relayOff(String cmd) {
@@ -327,8 +355,8 @@ void relayOff(String cmd) {
   } else {
     sendJSON["relay"] = "FAIL";
   }
-  serializeJson(sendJSON, Serial);
-  Serial.println();
+  serializeJson(sendJSON, PagWeb);
+  PagWeb.println();
 }
 
 void readADCCommand(String cmd, bool adc1) {
@@ -337,8 +365,8 @@ void readADCCommand(String cmd, bool adc1) {
   if (i2c_safe_mode) {
     sendJSON["adc"] = "FAIL";
     sendJSON["error"] = "SAFE_MODE";
-    serializeJson(sendJSON, Serial);
-    Serial.println();
+    serializeJson(sendJSON, PagWeb);
+    PagWeb.println();
     return;
   }
 
@@ -371,16 +399,16 @@ void readADCCommand(String cmd, bool adc1) {
         sendJSON["state"] = "dark";
       }
 
-      serializeJson(sendJSON, Serial);
-      Serial.println();
+      serializeJson(sendJSON, PagWeb);
+      PagWeb.println();
       return;
     }
     while (WIRE.available()) WIRE.read();  // Limpiar buffer
   }
 
   sendJSON["adc"] = "FAIL";
-  serializeJson(sendJSON, Serial);
-  Serial.println();
+  serializeJson(sendJSON, PagWeb);
+  PagWeb.println();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -418,8 +446,8 @@ uint8_t parseHex(String hex_str) {
     sendJSON.clear();
     sendJSON["status"] = "ERROR";
     sendJSON["msg"] = "Invalid I2C address";
-    serializeJson(sendJSON, Serial);
-    Serial.println();
+    serializeJson(sendJSON, PagWeb);
+    PagWeb.println();
     return 0;
   }
   return (uint8_t)addr;
