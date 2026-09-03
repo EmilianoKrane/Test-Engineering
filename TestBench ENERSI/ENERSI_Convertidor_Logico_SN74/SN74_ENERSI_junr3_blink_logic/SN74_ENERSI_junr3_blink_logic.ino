@@ -2,8 +2,8 @@
 Este firmware se carga en la JUNR3 para dar salidas digitales de 0-5V
 */
 
-#include <HardwareSerial.h>
 #include "Arduino.h"
+#include <HardwareSerial.h>
 
 #define A1_PIN PD2
 #define A2_PIN PD3
