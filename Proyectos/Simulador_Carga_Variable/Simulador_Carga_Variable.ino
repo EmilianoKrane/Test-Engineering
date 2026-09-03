@@ -32,7 +32,7 @@ void loop() {
 
       // ===== Lecturas simuladas =====
       float voltaje = randomFloat(2.8, 3.3);
-      float corriente = 0.5;
+      float corriente = 0.4;
       float potencia = voltaje * corriente;
 
       // ===== Formato solicitado =====
