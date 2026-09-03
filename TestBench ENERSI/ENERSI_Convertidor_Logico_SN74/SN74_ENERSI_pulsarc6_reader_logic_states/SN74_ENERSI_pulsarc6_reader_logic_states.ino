@@ -17,11 +17,6 @@ const float V_REF = 3.3;
 
 void setup() {
   Serial.begin(115200);
-
-  pinMode(INPUT_A0, INPUT_PULLDOWN);
-  pinMode(INPUT_A0, INPUT_PULLDOWN);
-  pinMode(INPUT_A0, INPUT_PULLDOWN);
-  pinMode(INPUT_A0, INPUT_PULLDOWN);
 }
 
 // Función auxiliar para generar el JSON basado en el voltaje
@@ -46,10 +41,10 @@ void loop() {
   int raw_a3 = analogRead(INPUT_A3);
 
   // 2. Convertir las lecturas a voltaje
-  float voltage_a0 = (raw_a0 / ADC_RESOLUTION) * V_REF;
+  float voltage_a0 = analogReadMilliVolts(INPUT_A0) / 1000.0;
   float voltage_a1 = (raw_a1 / ADC_RESOLUTION) * V_REF;
-  float voltage_a2 = (raw_a1 / ADC_RESOLUTION) * V_REF;
-  float voltage_a3 = (raw_a1 / ADC_RESOLUTION) * V_REF;
+  float voltage_a2 = (raw_a2 / ADC_RESOLUTION) * V_REF;
+  float voltage_a3 = (raw_a3 / ADC_RESOLUTION) * V_REF;
 
   // 3. Evaluar el rango e imprimir el JSON
   getStatusJSON("A0", voltage_a0);
