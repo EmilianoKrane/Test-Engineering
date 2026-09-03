@@ -10,7 +10,7 @@ Este firmware se carga en la JUNR3 para dar salidas digitales de 0-5V
 #define A3_PIN PD4
 #define A4_PIN PD5
 
-const int delay_ms = 1000;
+const int delay_ms = 2000;
 
 void setup() {
   Serial.begin(115200);
@@ -21,7 +21,7 @@ void setup() {
   pinMode(A3_PIN, OUTPUT);
   pinMode(A4_PIN, OUTPUT);
 
-  Serial.println("Hola Serial XD");
+  Serial.println("Serial inicializado en JUNR3");
 }
 
 void loop() {
