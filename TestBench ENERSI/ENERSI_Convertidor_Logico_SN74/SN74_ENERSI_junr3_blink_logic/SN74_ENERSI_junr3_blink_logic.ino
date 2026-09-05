@@ -7,14 +7,14 @@ Firmware SN74 ENERSI. La JUNR3 se encarga de entregar dos salidas digitales osci
 #include <ArduinoJson.h>
 #include <HardwareSerial.h>
 
-#define B1_PIN 14 // A0
+#define B1_PIN 14  // A0
 #define B2_PIN 15
 #define B3_PIN 16
 #define B4_PIN 17
 
 // ==== DECLARACIÓN DE OBJETO JSON ====
-StaticJsonDocument<1024> receiveJSON;
-StaticJsonDocument<1024> sendJSON;
+StaticJsonDocument<128> receiveJSON;
+StaticJsonDocument<128> sendJSON;
 
 const float ADC_RESOLUTION = 1024.0;
 const float V_REF = 5.0;
@@ -25,8 +25,9 @@ void getStatusJSON(String pinName, float voltage) {
 
   String status = (voltage >= 1.2 && voltage <= 1.7) ? "OK" : "ERROR";
 
-  StaticJsonDocument<256> doc;
+  StaticJsonDocument<96> doc;
   doc.clear();
+  doc["device"] = "JUNR3";
   doc["pin"] = pinName;
   doc["voltage"] = String(voltage, 2);
   doc["status"] = status;
@@ -40,7 +41,7 @@ void setup() {
 
   sendJSON.clear();
   sendJSON["System"] = "Ready";
-  sendJSON["Module"] = "PULSAR C6 logic converter ENERSI";
+  sendJSON["Module"] = "JUNR3 logic converter ENERSI";
   serializeJson(sendJSON, Serial);
   Serial.println();
 
@@ -78,7 +79,7 @@ void loop() {
         case 1:
           {
             sendJSON.clear();
-            sendJSON["ping"] = "pong";
+            sendJSON["ping"] = "pong_JUNR3";
             serializeJson(sendJSON, Serial);
             Serial.println();
             break;
@@ -106,8 +107,8 @@ void loop() {
         case 3:
           {
             sendJSON.clear();
-            int delay_ms = 500;
-            for (int i = 0; i < 10; i++) {
+            int delay_ms = 1000;
+            for (int i = 0; i < 5; i++) {
 
               int raw_b2 = analogRead(B2_PIN);
               int raw_b4 = analogRead(B4_PIN);

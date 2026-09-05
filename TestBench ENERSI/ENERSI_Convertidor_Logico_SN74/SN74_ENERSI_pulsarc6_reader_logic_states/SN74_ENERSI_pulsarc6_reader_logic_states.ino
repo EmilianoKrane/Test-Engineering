@@ -24,6 +24,7 @@ void getStatusJSON(String pinName, float voltage) {
 
   StaticJsonDocument<256> doc;
   doc.clear();
+  doc["device"] = "PULSARC6";
   doc["pin"] = pinName;
   doc["voltage"] = String(voltage, 2);
   doc["status"] = status;
@@ -77,7 +78,7 @@ void loop() {
         case 1:
           {
             sendJSON.clear();
-            sendJSON["ping"] = "pong";
+            sendJSON["ping"] = "pong_C6";
             serializeJson(sendJSON, Serial);
             Serial.println();
             break;
@@ -86,7 +87,7 @@ void loop() {
         case 2:
           {
             sendJSON.clear();
-            int delay_ms = 500;
+            int delay_ms = 1000;
             for (int i = 0; i < 5; i++) {
               digitalWrite(A2_PIN, HIGH);
               digitalWrite(A4_PIN, HIGH);
@@ -110,7 +111,7 @@ void loop() {
               float voltage_a1 = analogReadMilliVolts(A1_PIN) / 1000.0;
               float voltage_a3 = analogReadMilliVolts(A3_PIN) / 1000.0;
               getStatusJSON("A1", voltage_a1);
-              getStatusJSON("A2", voltage_a3);
+              getStatusJSON("A3", voltage_a3);
               delay(delay_ms);
             }
 
